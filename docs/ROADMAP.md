@@ -6,49 +6,75 @@
 
 ---
 
-## Phase 1 : Setup plateforme (Semaine 1)
+## Phase 1 : Setup et préparation (Semaine 1)
 
-- Installation de l’environnement Jetson/ROS2 Humble
-- Prise en main du ROSMASTER M3 Pro : test moteurs et bras
-- Vérification des capteurs : caméra, LiDAR, micro, écran tactile
-- Initialisation des nodes ROS de base et communication ROS2
-- Test de la mobilité de base sur le même étage
-
----
-
-## Phase 2 : MVP accueil & réservation (Semaines 2-4)
-
-- Développement du scan QR code / badge
-- Vérification des réservations via backend/API
-- Interface utilisateur de base sur écran tactile (confirmation, feedback)
-- Tests scénarios : visiteur unique et petits groupes
-- Logging pour suivi et debug
+- Installation Ubuntu 20.04 + ROS2 Humble sur Jetson Orin
+- Prise en main du ROSMASTER M3 Pro
+- Tests moteurs et bras via terminal
+- Vérification capteurs : LiDAR, caméra, écran tactile
 
 ---
 
-## Phase 3 : MVP navigation & guidage (Semaines 4-6)
+## Phase 2 : Modules Core – Interaction et Navigation (Semaines 2-3)
 
-- Intégration Nav2 + SLAM pour navigation autonome
-- Pathfinding de A → B vers la salle réservée
-- Détection et évitement d’obstacles dynamiques (personnes, objets)
-- Guidage de groupes de visiteurs
-- Tests parcours complets : détection → vérification → guidage
+### Interaction & Médiation linguistique
+
+- Implémentation `voice_node` STT local (Whisper tiny/base)
+- Traduction temps réel via `translate_node` ou LLM
+- Synthèse vocale offline (PiperTTS)
+- Sous-titrage et affichage sur interface tactile
+
+### Navigation
+
+- Configuration Nav2 : map, costmap, footprint, inflation radius
+- Tests SLAM avec LiDAR
+- Déplacement autonome de test, évitement obstacles
+- Pathfinding de A → B
 
 ---
 
-## Phase 4 : Interaction avancée (Semaines 6-8)
+## Phase 3 : Vérification et Guidage (Semaines 4-5)
 
-- Implémentation de la médiation linguistique complète (STT → traduction → TTS)
-- Animation gestuelle du bras pour interaction sociale ou pointer direction
-- Notification automatique au personnel pour demandes ou incidents
-- Tests multilingues et scénarios interactifs complets
+- Implémentation `vision_node` pour scan QR / badge
+- Vérification réservation avec backend simulé / réel
+- Intégration guidage vers salle via Nav2
+- Gestion des groupes de visiteurs
+- Tests de flux complet : détection → vérification → guidage
 
 ---
 
-## Phase 5 : Stabilisation & démo (Semaine 9)
+## Phase 4 : Interface tactile & Services internes (Semaines 6-7)
 
-- Tests end-to-end : accueil, interaction, vérification, guidage, navigation, notifications
-- Correction des blocages critiques et optimisation des performances
-- Validation des scénarios : visiteur unique et groupes
-- Préparation de la démonstration finale fonctionnelle
-- Livraison des livrables : code source structuré, CDC technique final, diagrammes UML, tag v0.0.1
+- Développement UI écran tactile (`ui_node` React)
+- Accès aux informations du centre (plan, services)
+- Commandes internes et signalement d’assistance
+- Intégration avec notifications au personnel (`notify_node`)
+
+---
+
+## Phase 5 : Administration & Monitoring (Semaines 8)
+
+- Interface admin web pour contrôle à distance (`admin_node`)
+- Monitoring robot : batterie, position, logs, statut navigation
+- Implémentation du bouton d’arrêt d’urgence et watchdog
+
+---
+
+## Phase 6 : Tests intégrés & Optimisation (Semaines 9)
+
+- Tests end-to-end : accueil, interaction, vérification, guidage, navigation
+- Simulation collisions et sécurité via EmergencyStop
+- Optimisation latence STT / TTS
+- Ajustement navigation (vitesse, costmap, clearance)
+
+---
+
+## Phase 7 : Démonstration finale & Livrables (Semaine 10)
+
+- Présentation complète fonctionnelle aux enseignants
+- Validation scénarios : visiteur unique / groupe
+- Livraison des livrables :
+  - Code source structuré
+  - CDC technique final
+  - Tag v0.0.1
+  - Documentation et diagrammes UML
