@@ -79,43 +79,43 @@ Scénario nominal :
 #### 4. Architecture technique
 
 ```markdown
-[ VISITEUR ] [ ADMIN ]
-| |
-v v
-+-----+----------+ +------+-------+
-| Ecran Tactile | | Interface |
-+-----+----------+ | Web (React) |
-| +------+-------+
-| |
-| (Input UI / Audio) | (WebSocket)
-v v
+[ VISITEUR ]                          [ ADMIN ]
+      |                                     |
+      v                                     v
++-----+----------+                   +------+-------+
+|  Ecran Tactile |                   | Interface    |
++-----+----------+                   | Web (React)  |
+      |                              +------+-------+
+      |                                     |
+      | (Input UI / Audio)                  | (WebSocket)
+      v                                     v
 +-------------+-----------------------------+-------------------------+
-| JETSON ORIN NX (ROS2 HUMBLE) |
-| |
+|                  JETSON ORIN NX (ROS2 HUMBLE)                       |
+|                                                                     |
 | [Node: STT] <----> [Node: TRANSLATION/LLM] <----> [Node: ROSBRIDGE] |
-| (Whisper) (Llama/Gemma) (rosbridge_suite) |
-| | | | |
-| | (Cmd) | (Twist) | (Joints) |
-| v v v |
-| [Node: QR/VISION] [Node: NAVIGATION] [Node: ARM] |
-| (OpenCV) (Nav2 + SLAM) (MoveIt2) |
-| |
-| [Node: TTS (Piper)] [Node: Reservation API] [Node: Notification] |
-| [Node: Gesture Controller] [Node: Grasp Logic] |
+|  (Whisper)          (Llama/Gemma)                (rosbridge_suite)  |
+|      |                     |                             |          |
+|      | (Cmd)               | (Twist)                     | (Joints) |
+|      v                     v                             v          |
+| [Node: QR/VISION]    [Node: NAVIGATION]           [Node: ARM]       |
+|  (OpenCV)             (Nav2 + SLAM)               (MoveIt2)         |
+|                                                                     |
+| [Node: TTS (Piper)] [Node: Reservation API] [Node: Notification]    |
+| [Node: Gesture Controller] [Node: Grasp Logic]                      |
 +-----------+------------------------+----------------------+---------+
-| | |
-v v v
-[CAMERA] [LIDAR/ROUES] [BRAS 6DOF]
-(PINCE)
+            |                        |                      |
+            v                        v                      v
+         [CAMERA]               [LIDAR/ROUES]          [BRAS 6DOF]
+                                                           (PINCE)
 ```
 
 #### 5. Diagrammes UML
 
-Liens ou contenu des diagrammes (use case, sequence, etat). Au minimum 3.
+- [UseCase](https://mermaid.live/edit#pako:eNp9VEtu2zAQvQpBII0COKk-lu0IQQDXyaJAAwRO20WlIKAl2mZBkSo_adMkQFc9QHfdddl03Rv4JjlJKcpyJNupFqLI9-bNcGY0tzDlGYYRnFL-OZ0jocCbccISBsyzswOGqcJayGo_zHLCiFQClYeO097v7VWsd4pQIpeUxqbGx3zClePYpTxb-bq4kWrxO8fVgdSTmUDFvOJfnY7Pr0oCzuME1swKAwZL4GWtZGMYeU58sngoKEpxjpmSINNAlOzLvSbNtzSFU0U4A9njt598IhVKKZZtYtDWAwUn5j0Ej99_gFdtateJzwVmGaAYmNx8xKr8KqiWIOVa2Aia_NCJz7i-fopzItCa954TXyAiCbYhagb4xMiuC_WdeCjE4o-qWGKGWYrbQgMnHnGmxOKvCWnxC2SmfGiDdejEr5nCYmpuC1Cryus-PbdUzHPNSIpsEq95iuiaoGfK8VagTFd5NlUsJBCLB0zXeH6Ll_FU22w_bxA0Q9VP3bYRp8nyaSoQA29GJ6C_u7umY4r23pjOMHgJ5sapFhsdY0ra6NYxpva-EpDSP8MSOJTPyCeNwZQzewGGKcXNtgf7-8dlMwHwoqyqfXthtbjL38eghnV3dERYSnWGj4_vSvi_aLdGvW2oX6O9bWi4sg23Ou5W4a0C8NytNK-Z71Z-GjNgY0IsE-IFK_WgPvIqv_6zuu3xs21ELaUOl2vfKg5gB84EyWCkhMYdmGORo3ILb0uNBKq5-RUTGJnPDE-RpiqBCbs3ZgViHzjPa0vB9WwOoymi0ux0kRmnJwSZsfVEMU2DxYhrpmAUWgUY3cIvMPJ878B3w0E39AO_1wu8fgfeGI53cBj0Q9cd-L4fdr37DvxqXboHg74RwBlRXJxVQ9vO7vt_pJ7KrA)
+- [Sequence](https://mermaid.live/edit#pako:eNqFVv9u6jYUfhXL0pXaCboSBqXRVSUGvVO1ckGA7qSNaXIdk_jKsZljc8uqPsCeZGOvkRfbsQMkodkdf0TY_r7z4zvHJ3nBVEUMhzgzxLAxJ7EmaXsbrCSC3y_f_Ira7Ts0U1-Ynspi87DwBz8I9UTEbw-RYChED5IbTgTPiOFKovl0EaCPYD5bHajeSY30UhxUnd3LoTFMGlYenbY8YMwMo87DTLOMSepcj8jGMKvRJ54519-ix4fxcF5aeMupuQILH4jNMoaIYPro-rUe9wpPIBnI0jBNvDF08UlRIi5XGJGsdtCUF1XWsJ8Snm2YruRW3fbApSaR9WYeHycQ2dBGXCEKGVqd79HFYrm8LPl1tOMvdtIkkOWMO4shWrJniN44HDclsQ7zwvL12jr9Co_AXC7QnJFoVxGyjnE0lyDoxyWKoPoqtl-VbxilXPIMwjF8jS7GitoUSkC4ZgcdPQL2m0ScqYy7XCVzpO81wKH4Kk2JBNsLSmTJacA6EyMvJJuO5r5vUqgZ-gBRZCWzAnGMoSRil7FjqF5S6BVXa-i0e5LtAFmyz-FFp20Vv08JF8BeWErzv7P_YWgNDe0yAkb-J00YRQJ6GOKqNE8J-k915vmefLaZ8Xtfq8xHsuWxv7pFHWDdVIIREdQKaLvPzEkxZpnhsrjxmuV_WYYugBlcVuWsMAo1Jspu2UHMGTHJmsuIyxhNf6ze-hLlWVtujpzpE4ROYYBE-d7d7Hxf4Z1wb32NEpa6Rs33MYlrpDNnlbTcjODFkJhp9cxTDu4Q5U_ivNHfvXPXURZFyBDY0hChgrJLdih3dfg5P9WhEaKJMm0qwPpZWues0xWB8rLfbf6Pr6Jvf9zMcMWsgYeUqnRD4qJXjrTiWQ3qbMwXgJP_xlPn683BSaFFvqdWew0LAKv24j3cxxgG9G5h1Aa9f08TxSm7uyswUgFE8zgxSK3PsNCKYFnAOgHTG6KLKJGyMCCEKF4MPIWt8uXSrFXNbrMiDZCaJg3nR1UajopnPZ1ysi4SayL1xb3V5jCvDZoQaZnALRxrHuHQaMtaGMjQZ7DE_s6uMAz3lK1wCH8jtiZW-CK_Am1D5M9KpUemVjZOcLgmIoOV3UTll8AJwmC86pGy0uCw0_UmcPiCn3EY9LtX_X6vNxh0bwa31_2g18I7HLaD4CoY3PY6g26v3w26wXfBawv_4d1eXw06g85Np3fbuYbD65ubFmYRN0pPio8R_03y-i9vw8tB)
+- [Etat](https://mermaid.live/edit#pako:eNqFVv9u6jYUfhXL0pXaCboSBqXRVSUGvVO1ckGA7qSNaXIdk_jKsZljc8uqPsCeZGOvkRfbsQMkodkdf0TY_r7z4zvHJ3nBVEUMhzgzxLAxJ7EmaXsbrCSC3y_f_Ira7Ts0U1-Ynspi87DwBz8I9UTEbw-RYChED5IbTgTPiOFKovl0EaCPYD5bHajeSY30UhxUnd3LoTFMGlYenbY8YMwMo87DTLOMSepcj8jGMKvRJ54519-ix4fxcF5aeMupuQILH4jNMoaIYPro-rUe9wpPIBnI0jBNvDF08UlRIi5XGJGsdtCUF1XWsJ8Snm2YruRW3fbApSaR9WYeHycQ2dBGXCEKGVqd79HFYrm8LPl1tOMvdtIkkOWMO4shWrJniN44HDclsQ7zwvL12jr9Co_AXC7QnJFoVxGyjnE0lyDoxyWKoPoqtl-VbxilXPIMwjF8jS7GitoUSkC4ZgcdPQL2m0ScqYy7XCVzpO81wKH4Kk2JBNsLSmTJacA6EyMvJJuO5r5vUqgZ-gBRZCWzAnGMoSRil7FjqF5S6BVXa-i0e5LtAFmyz-FFp20Vv08JF8BeWErzv7P_YWgNDe0yAkb-J00YRQJ6GOKqNE8J-k915vmefLaZ8Xtfq8xHsuWxv7pFHWDdVIIREdQKaLvPzEkxZpnhsrjxmuV_WYYugBlcVuWsMAo1Jspu2UHMGTHJmsuIyxhNf6ze-hLlWVtujpzpE4ROYYBE-d7d7Hxf4Z1wb32NEpa6Rs33MYlrpDNnlbTcjODFkJhp9cxTDu4Q5U_ivNHfvXPXURZFyBDY0hChgrJLdih3dfg5P9WhEaKJMm0qwPpZWues0xWB8rLfbf6Pr6Jvf9zMcMWsgYeUqnRD4qJXjrTiWQ3qbMwXgJP_xlPn683BSaFFvqdWew0LAKv24j3cxxgG9G5h1Aa9f08TxSm7uyswUgFE8zgxSK3PsNCKYFnAOgHTG6KLKJGyMCCEKF4MPIWt8uXSrFXNbrMiDZCaJg3nR1UajopnPZ1ysi4SayL1xb3V5jCvDZoQaZnALRxrHuHQaMtaGMjQZ7DE_s6uMAz3lK1wCH8jtiZW-CK_Am1D5M9KpUemVjZOcLgmIoOV3UTll8AJwmC86pGy0uCw0_UmcPiCn3EY9LtX_X6vNxh0bwa31_2g18I7HLaD4CoY3PY6g26v3w26wXfBawv_4d1eXw06g85Np3fbuYbD65ubFmYRN0pPio8R_03y-i9vw8tB)
+- [Classe](https://mermaid.live/edit#pako:eNp1Vf9u2zYQfhWCQAd1dbxYnh1HKAKsXTdsSJsiw1psMEBQ5FlmS5ECfwRxg7xP9xx9sR0V2ZYaRX9YJu_I--677053VFgJtKBCc-9_VbxyvF4bgk-7Q958uGLXtrSB3D1sp-fFX8EpUxGXDEzJgYWH6IlvX719qMFVYMSO-WCb7HnP5MBDYH7nA9R7w_3a9FF8sErAO0TaR_Hy5cet8g048gN5r_B9cdG7VSu8z2C0kD0nD3h7VjzGP7MQfNalEuA29ECdbLTlgQhrNkoibGBhizi3VstRgK8cV-YxwEvNa05-Ir9DXfMBvC6siM6BCQwDJQQ9ByQLHA_AMGxjjYdMmSb2Mb4Ijhuvk086m6WfCQkceQ5Mc1M9waXyyo5g_efq8gqZfMP97ur19QCshAAiMFt-wpcfFM8Lbpi0ItaYxsAieBOiA7ZBRcETdX3Hb1TFwygetOUDFO-thwNhDS76MDDlynKdSfADjviNVRKRoyCFhkzywMeh_OLqxxje2hv4Iwxh_GmVCUnmQD6lvwOV34KIWI8KUWDumZIDLFpVhgmkw3G2sY4l8p5g5iOUr5yS1Yjqr60vWxMK6xq4CAN4pbNcCu6xo2IZVNDgs-_EjWwZiZrR2JTB7UZJefYM79ZtaTxBBMLWSLlKa5JdwkPrE9zy376iGaMQg0h9d89xbPx4cnJs3zHjoXVGTx7EOmYdymfMo6vqmGnAcC_t33S8TRlLa8y3_zCv7O-gcJq0cYiMBCtXt7OhbnCv1EAKsqZ7tnBxyUvQa9pRcZxd0-lFb1AUpIklix5QBw2A2Hbux_Yc87fCpYkQdTcrjvbkfYxVECw_208IvHHMfSiyDpBisUFFQKfr71q0jXKEiGHAeJTyJvpDkH0rPfIV1jq5bwCtzGc6oRUCoEVwESYU92uelrQV_JqGLUp0TRO_EjY8ZU3X5h6PNdz8a229P-lsrLa02HDtcfWQQPc1O7ig6MG9ttEEWszn7RW0uKO3tMiX8-lyuVisVvOz1fnpMl9M6I4WJ3k-zVfni9lqvljO83n-c34_oV_asKfT1Ww1O5stl2ez89PFaToCUgXr3nYf1PS6_x9il1Jf)
 
-```markdown
-pas encore fait
-```
 
 #### 6. Stack technique
 
