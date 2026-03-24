@@ -10,6 +10,7 @@ import os
 def generate_launch_description():
     use_joint_state_publisher = LaunchConfiguration("use_joint_state_publisher")
     use_rviz = LaunchConfiguration("use_rviz")
+    use_sim_time = LaunchConfiguration("use_sim_time")
 
     declare_use_joint_state_publisher = DeclareLaunchArgument(
         "use_joint_state_publisher",
@@ -21,6 +22,12 @@ def generate_launch_description():
         "use_rviz",
         default_value="true",
         description="Start RViz2.",
+    )
+
+    declare_use_sim_time = DeclareLaunchArgument(
+        "use_sim_time",
+        default_value="false",
+        description="Use simulation time.",
     )
 
     urdf_path = os.path.join(
@@ -43,7 +50,10 @@ def generate_launch_description():
         executable="robot_state_publisher",
         name="robot_state_publisher",
         output="screen",
-        parameters=[{"robot_description": robot_description_content}],
+        parameters=[{
+            "robot_description": robot_description_content,
+            "use_sim_time": use_sim_time,
+        }],
     )
 
     joint_state_publisher = Node(
@@ -51,6 +61,10 @@ def generate_launch_description():
         executable="joint_state_publisher",
         name="joint_state_publisher",
         output="screen",
+        parameters=[{
+            "robot_description": robot_description_content,
+            "use_sim_time": use_sim_time,
+        }],
         condition=IfCondition(use_joint_state_publisher),
     )
 
@@ -60,12 +74,14 @@ def generate_launch_description():
         name="rviz2",
         output="screen",
         arguments=["-d", rviz_config],
+        parameters=[{"use_sim_time": use_sim_time}],
         condition=IfCondition(use_rviz),
     )
 
     return LaunchDescription([
         declare_use_joint_state_publisher,
         declare_use_rviz,
+        declare_use_sim_time,
         robot_state_publisher,
         joint_state_publisher,
         rviz,
