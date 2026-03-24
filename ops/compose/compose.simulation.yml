@@ -1,0 +1,21 @@
+name: evo-botics-simulation
+
+services:
+  vnc-gui:
+    build:
+      context: ../..
+      dockerfile: ops/docker/Dockerfile.simulation
+    image: evo-botics/simulation:humble
+    container_name: evo-botics-vnc-gui
+    platform: linux/arm64
+    working_dir: /workspace
+    environment:
+      - ROS_DOMAIN_ID=42
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - TZ=Europe/Paris
+    ports:
+      - "6080:80"
+    volumes:
+      - ../..:/workspace
+    tty: true
+    stdin_open: true
