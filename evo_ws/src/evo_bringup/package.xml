@@ -4,7 +4,7 @@
   <version>0.0.1</version>
   <description>Bringup and visualization launch files for Evo-Botics.</description>
 
-  <maintainer>evo-botics</maintainer>
+  <maintainer email="ambiyadms@gmail.com">evo-botics</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
