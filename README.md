@@ -1,13 +1,13 @@
-## 🤖 Evo-Botics – Autonomous Assistance Robot (RAA)
+## Evo-Botics - Autonomous Reception Robot (RAA)
 
-**Evo-Botics** is a robotics and AI group project developed at HETIC (Web3).  
-Our mission: build an autonomous assistance robot designed for accessibility in public spaces (ERP – Établissements Recevant du Public).
+Evo-Botics is a robotics and AI group project developed at HETIC (Web3).
+Mission: build an autonomous reception robot for indoor business centers.
 
 
 
-## 👥 Team Evo-Botics
+## Team Evo-Botics
 
-A multidisciplinary robotics team combining:
+A multidisciplinary robotics team:
 
 - Ambiya Dimas Galystan
 
@@ -18,70 +18,98 @@ A multidisciplinary robotics team combining:
 - Jules Bourrin
 
 
-## 🌍 Project Context
+## Project Context
 
-In France, over 12 million people live with disabilities.  
-Many public spaces remain partially inaccessible despite legal requirements.
+The project targets reception and visitor guidance in business centers.
+The robot improves visitor flow and reduces front-desk load.
 
-Our solution:  
-An affordable, autonomous service robot capable of:
+The solution is an autonomous service robot capable of:
 
--   Navigating safely in indoor environments
-    
--   Transporting objects (books, documents, small parcels)
-    
--   Interacting via an accessible web interface
-    
--   Communicating in real-time with a monitoring system
-    
+- Navigating safely on one floor
+- Scanning QR reservations
+- Guiding visitors to room waypoints
+- Providing a web admin interface and notifications
 
 * * *
 
-## 🎯 Objectives
+## Objectives
 
-### 🧭 Autonomous Navigation
+### Autonomous Navigation
 
--   SLAM mapping
-    
--   Obstacle avoidance
-    
--   Optimized path planning
-    
+- SLAM mapping
+- Obstacle avoidance
+- Optimized path planning
 
-### 🦾 Object Manipulation
+### Voice and Vision
 
--   Object detection (QR / computer vision)
-    
--   Robotic arm grasp & placement
-    
+- QR detection and reservation validation
+- Speech pipeline (STT -> translation -> TTS)
 
-### 🌐 Accessible Web Interface
+### Web Interface
 
--   Dashboard for robot control
-    
--   WCAG-compliant interface
-    
--   Optional voice commands
-    
+- Touchscreen visitor feedback flow
+- Admin dashboard via rosbridge
+- Monitoring and emergency stop
 
-### 📡 IoT Communication
+### Communication
 
--   Real-time robot tracking
-    
--   MQTT/WebSocket communication
-    
--   Alert system
-    
+- ROS2 DDS for robot nodes
+- WebSocket bridge for UI
+- Email/webhook alert pipeline
 
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Layer | Technologies |
 | --- | --- |
-| Robot OS | ROS (Navigation Stack, MoveIt) |
-| Mapping | RTAB-Map + LiDAR |
-| Vision | OpenCV |
-| Backend | Node.js |
-| Frontend | React.js + ARIA |
-| Communication | MQTT / WebSockets |
-| Hardware | Yahboom Transbot (Jetson Nano) |
+| Robot OS | ROS2 Humble (Nav2, MoveIt2) |
+| Mapping | SLAM Toolbox + LiDAR |
+| Vision | OpenCV, YOLOv8 |
+| Voice | Whisper, Piper |
+| Backend | Python (FastAPI), Webhooks |
+| Frontend | React |
+| Communication | DDS, rosbridge, Foxglove |
+| Hardware | ROSMASTER M3 Pro + Jetson Orin NX |
+
+## Sprint 0 Quickstart
+
+Use the full guide in `docs/SPRINT0_FULL_GUIDE.md`.
+
+First commands:
+
+```bash
+chmod +x scripts/sprint0_bootstrap.sh
+./scripts/sprint0_bootstrap.sh
+docker compose -f ops/compose/compose.simulation.yml exec -T vnc-gui bash -lc 'source /opt/ros/humble/setup.bash && cd /workspace/evo_ws && colcon build --symlink-install'
+```
+
+## RViz and Gazebo (Docker + Exposed Port)
+
+The GUI is exposed through the web VNC desktop on port `6080`.
+
+- Open desktop: `http://localhost:6080`
+- Service port mapping is defined in `ops/compose/compose.simulation.yml` as `6080:80`.
+
+Best-practice flow:
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml up -d --build
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'source /opt/ros/humble/setup.bash && cd /workspace/evo_ws && colcon build --symlink-install'
+```
+
+Launch M3 Pro in RViz (opens in `localhost:6080` desktop):
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'cd /workspace && ./scripts/dev/open_m3pro_display.sh'
+```
+
+Launch Gazebo Sim (Fortress, opens in `localhost:6080` desktop):
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'cd /workspace && ./scripts/dev/open_gazebo_fortress.sh'
+```
+
+Notes:
+
+- RViz/Gazebo are desktop apps, so they do not expose their own HTTP ports here.
+- You interact with both applications through the VNC web desktop on `localhost:6080`.
