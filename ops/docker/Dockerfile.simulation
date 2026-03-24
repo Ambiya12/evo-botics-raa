@@ -1,0 +1,28 @@
+FROM tiryoh/ros2-desktop-vnc:humble
+
+SHELL ["/bin/bash", "-c"]
+
+RUN apt-get update && apt-get install -y \
+    ros-humble-joint-state-publisher \
+    ros-humble-nav2-bringup \
+    ros-humble-slam-toolbox \
+    ros-humble-moveit \
+    ros-humble-rosbridge-server \
+    ros-humble-cv-bridge \
+    ros-humble-rosbag2 \
+    ros-humble-rosbag2-storage-mcap \
+    ros-humble-rmw-cyclonedds-cpp \
+    ros-humble-ros-gz \
+    ros-humble-ros-gz-sim \
+    ros-humble-ros-gz-bridge \
+    python3-colcon-common-extensions \
+    python3-opencv \
+    ignition-fortress \
+    ignition-tools \
+    git \
+    rsync \
+    curl \
+    vim && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN echo "source /opt/ros/humble/setup.bash" >> /root/.bashrc
