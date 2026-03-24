@@ -4,15 +4,18 @@
   <version>0.0.1</version>
   <description>Bringup and visualization launch files for Evo-Botics.</description>
 
-  <maintainer email="devnull@example.com">evo-botics</maintainer>
+  <maintainer>evo-botics</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <exec_depend>ament_index_python</exec_depend>
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>yahboom_M3Pro_description</exec_depend>
 
