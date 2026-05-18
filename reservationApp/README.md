@@ -6,12 +6,7 @@ Cette application est développée avec **Laravel 12** (PHP) pour la partie Back
 
 ## 🛠️ Installation et Configuration Initiale
 
-Commencez par cloner le dépôt puis ouvrez votre terminal et lancez ces commandes :
-```bash
-cd .\reservationApp\
-composer install
-```
-En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME et DB_PASSWORD du fichier .env.example et renommez le .env.
+Commencez par cloner le dépôt puis remplissez les champs DB_DATABASE, DB_USERNAME et DB_PASSWORD du fichier .env.example.
 
 # Lancement du projet avec Docker
 
@@ -31,5 +26,5 @@ En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME
 ```
 - Lancez le projet avec :
 ```bash
-./vendor/bin/sail npm run dev
+npm run dev
 ```
