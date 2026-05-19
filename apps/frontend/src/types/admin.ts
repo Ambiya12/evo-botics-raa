@@ -12,6 +12,8 @@ export type RobotState =
 
 export type ServiceStatus = "online" | "degraded" | "offline" | "mock";
 
+export type ConnectionStatus = "mock" | "disconnected" | "connected_ros";
+
 export type Severity = "info" | "warning" | "error" | "critical";
 
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
@@ -20,11 +22,14 @@ export interface RobotStatus {
   id: string;
   name: string;
   mode: "mock" | "rosbridge";
+  connectionStatus: ConnectionStatus;
   state: RobotState;
   battery: number;
   location: string;
   currentWaypoint: string;
   destination: string;
+  currentMissionSessionId: string | null;
+  lastIncidentSummary: string;
   lastUpdate: string;
   emergencyStop: boolean;
   services: Array<{

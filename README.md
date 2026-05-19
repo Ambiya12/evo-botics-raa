@@ -92,6 +92,15 @@ The admin dashboard is currently implemented in mock mode so the team can work
 without direct access to the robot. It provides the operator layout for robot
 status, current visitor session, event logs, incidents, and safety actions.
 
+Robot status overview data goes through a service abstraction:
+
+- `apps/frontend/src/services/robotStatusService.ts`
+- default provider: mock data
+- future provider: ROS/rosbridge WebSocket events
+
+This allows replacing only the provider layer when real robot telemetry is
+available.
+
 ```bash
 npm install
 npm run dev

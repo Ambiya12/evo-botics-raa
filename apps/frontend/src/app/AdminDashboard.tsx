@@ -1,26 +1,24 @@
 import {
   AlertTriangle,
-  BatteryCharging,
   Bell,
   CircleStop,
-  Clock3,
   MapPin,
   Pause,
   Play,
   Radio,
   RotateCcw,
-  Route,
   Search,
   ShieldCheck,
-  Signal,
 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import {
   currentSession,
   eventLogs,
   incidents,
   navigationItems,
-  robotStatus,
 } from "../data/mockAdminData";
+import { getRobotStatus } from "../services/robotStatusService";
 import type { EventLog, Incident, RobotStatus, ServiceStatus } from "../types/admin";
 
 const stateLabel: Record<RobotStatus["state"], string> = {
@@ -95,57 +93,7 @@ function Topbar() {
   );
 }
 
-function OverviewCards() {
-  const cards = [
-    {
-      label: "Robot state",
-      value: stateLabel[robotStatus.state],
-      meta: robotStatus.mode === "mock" ? "Mock data source" : "ROS bridge connected",
-      icon: Signal,
-      tone: "mock" as const,
-    },
-    {
-      label: "Battery",
-      value: `${robotStatus.battery}%`,
-      meta: "Preferred demo threshold: 80%",
-      icon: BatteryCharging,
-      tone: "warning" as const,
-    },
-    {
-      label: "Destination",
-      value: robotStatus.destination,
-      meta: `Current: ${robotStatus.currentWaypoint}`,
-      icon: Route,
-      tone: "success" as const,
-    },
-    {
-      label: "Last update",
-      value: robotStatus.lastUpdate,
-      meta: "Live refresh placeholder",
-      icon: Clock3,
-      tone: "neutral" as const,
-    },
-  ];
-
-  return (
-    <section className="overview-grid" aria-label="Robot overview">
-      {cards.map((card) => (
-        <article className="metric-card" key={card.label}>
-          <div className={`metric-card__icon metric-card__icon--${card.tone}`}>
-            <card.icon aria-hidden="true" size={21} />
-          </div>
-          <div>
-            <p>{card.label}</p>
-            <strong>{card.value}</strong>
-            <span>{card.meta}</span>
-          </div>
-        </article>
-      ))}
-    </section>
-  );
-}
-
-function RobotHealthPanel() {
+function RobotHealthPanel({ robotStatus }: { robotStatus: RobotStatus }) {
   const statusTone: Record<ServiceStatus, "success" | "warning" | "danger" | "mock"> = {
     online: "success",
     degraded: "warning",
@@ -337,14 +285,51 @@ function SafetyActions() {
 }
 
 export function AdminDashboard() {
+  const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStatus = async () => {
+      const status = await getRobotStatus();
+      if (mounted) {
+        setRobotStatus(status);
+      }
+    };
+
+    void loadStatus();
+    const intervalId = window.setInterval(() => {
+      void loadStatus();
+    }, 5000);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  if (!robotStatus) {
+    return (
+      <div className="app-shell">
+        <Sidebar />
+        <main className="dashboard">
+          <Topbar />
+          <section className="panel">
+            <p>Loading robot status...</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell">
       <Sidebar />
       <main className="dashboard">
         <Topbar />
-        <OverviewCards />
+        <RobotStatusOverview robotStatus={robotStatus} />
         <div className="dashboard-grid">
-          <RobotHealthPanel />
+          <RobotHealthPanel robotStatus={robotStatus} />
           <CurrentSessionPanel />
           <SafetyActions />
           <EventLogTable logs={eventLogs} />

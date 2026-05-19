@@ -257,6 +257,14 @@ dt {
   padding: 20px;
 }
 
+.panel--overview {
+  margin-bottom: 18px;
+}
+
+.overview-grid--panel {
+  margin-bottom: 0;
+}
+
 .panel--wide {
   grid-column: span 2;
 }
