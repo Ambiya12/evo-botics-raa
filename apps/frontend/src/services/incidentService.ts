@@ -31,6 +31,10 @@ const mockIncidentProvider: IncidentProvider = {
 
 let provider: IncidentProvider = mockIncidentProvider;
 
+function createIncidentId(): string {
+  return `INC-${Date.now()}`;
+}
+
 export function setIncidentProvider(nextProvider: IncidentProvider): void {
   provider = nextProvider;
 }
@@ -41,4 +45,14 @@ export async function getIncidents(): Promise<Incident[]> {
 
 export async function acknowledgeIncidentById(incidentId: string): Promise<void> {
   await provider.acknowledgeIncident(incidentId);
+}
+
+export async function addIncident(entry: Omit<Incident, "id">): Promise<Incident> {
+  const nextIncident: Incident = {
+    id: createIncidentId(),
+    ...entry,
+  };
+
+  incidentStore = [nextIncident, ...incidentStore];
+  return Promise.resolve(structuredClone(nextIncident));
 }

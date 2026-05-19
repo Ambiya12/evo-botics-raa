@@ -16,6 +16,7 @@ import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import {
   navigationItems,
 } from "../data/mockAdminData";
+import { triggerEmergencyStop } from "../services/adminControlService";
 import { acknowledgeIncidentById, getIncidents } from "../services/incidentService";
 import { getRecentEventLogs } from "../services/eventLogService";
 import { getRobotStatus } from "../services/robotStatusService";
@@ -116,7 +117,46 @@ function RobotHealthPanel({ robotStatus }: { robotStatus: RobotStatus }) {
   );
 }
 
-function SafetyActions() {
+function SafetyActions({
+  emergencyStopActive,
+  onEmergencyStop,
+}: {
+  emergencyStopActive: boolean;
+  onEmergencyStop: () => Promise<void>;
+}) {
+  const [isConfirmingEmergencyStop, setIsConfirmingEmergencyStop] = useState(false);
+  const [isSubmittingEmergencyStop, setIsSubmittingEmergencyStop] = useState(false);
+
+  const handleEmergencyStopClick = async () => {
+    if (emergencyStopActive || isSubmittingEmergencyStop) {
+      return;
+    }
+
+    if (!isConfirmingEmergencyStop) {
+      setIsConfirmingEmergencyStop(true);
+      return;
+    }
+
+    setIsSubmittingEmergencyStop(true);
+
+    try {
+      await onEmergencyStop();
+      setIsConfirmingEmergencyStop(false);
+    } finally {
+      setIsSubmittingEmergencyStop(false);
+    }
+  };
+
+  const emergencyStopLabel = emergencyStopActive
+    ? "Emergency stop active"
+    : isConfirmingEmergencyStop
+      ? "Confirm emergency stop"
+      : "Emergency stop";
+
+  const emergencyStopButtonClass = `emergency-button ${
+    isConfirmingEmergencyStop ? "emergency-button--confirming" : ""
+  }`;
+
   return (
     <section className="panel safety-panel">
       <div className="panel__header">
@@ -127,10 +167,21 @@ function SafetyActions() {
         <ShieldCheck aria-hidden="true" size={21} />
       </div>
 
-      <button className="emergency-button" type="button">
+      <button
+        className={emergencyStopButtonClass}
+        type="button"
+        onClick={() => {
+          void handleEmergencyStopClick();
+        }}
+        disabled={emergencyStopActive || isSubmittingEmergencyStop}
+      >
         <CircleStop aria-hidden="true" size={20} />
-        Emergency stop
+        {emergencyStopLabel}
       </button>
+
+      {!emergencyStopActive && isConfirmingEmergencyStop ? (
+        <p className="safety-panel__hint">Press again to confirm the mock emergency stop command.</p>
+      ) : null}
 
       <div className="control-grid">
         <button type="button">
@@ -159,6 +210,20 @@ export function AdminDashboard() {
   const [currentSession, setCurrentSession] = useState<VisitorSession | null>(null);
   const [eventLogs, setEventLogs] = useState<EventLog[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+
+  const refreshDashboardData = async () => {
+    const [status, session, logs, incidentItems] = await Promise.all([
+      getRobotStatus(),
+      getCurrentVisitorSession(),
+      getRecentEventLogs(),
+      getIncidents(),
+    ]);
+
+    setRobotStatus(status);
+    setCurrentSession(session);
+    setEventLogs(logs);
+    setIncidents(incidentItems);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -214,6 +279,11 @@ export function AdminDashboard() {
     setIncidents(updatedIncidents);
   };
 
+  const handleEmergencyStop = async () => {
+    await triggerEmergencyStop();
+    await refreshDashboardData();
+  };
+
   if (!robotStatus) {
     return (
       <div className="app-shell">
@@ -237,7 +307,10 @@ export function AdminDashboard() {
         <div className="dashboard-grid">
           <RobotHealthPanel robotStatus={robotStatus} />
           <CurrentVisitorSessionPanel session={currentSession} />
-          <SafetyActions />
+          <SafetyActions
+            emergencyStopActive={robotStatus.emergencyStop}
+            onEmergencyStop={handleEmergencyStop}
+          />
           <EventLogTable logs={eventLogs} />
           <IncidentMonitoringPanel
             incidents={incidents}

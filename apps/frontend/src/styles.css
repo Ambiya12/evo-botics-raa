@@ -42,6 +42,18 @@ input {
 button {
   cursor: pointer;
 }
+.emergency-button--confirming {
+  background: linear-gradient(110deg, #ef4444, #b91c1c);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35);
+}
+
+.safety-panel__hint {
+  margin: 0;
+  margin-top: -0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  color: #991b1b;
+}
 
 .app-shell {
   display: grid;

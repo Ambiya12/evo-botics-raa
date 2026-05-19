@@ -7,9 +7,15 @@ export interface EventLogProvider {
 
 const mockEventLogProvider: EventLogProvider = {
   async fetchRecentEventLogs() {
-    return Promise.resolve(structuredClone(eventLogs));
+    return Promise.resolve(structuredClone(eventLogStore));
   },
 };
+
+let eventLogStore: EventLog[] = structuredClone(eventLogs);
+
+function createEventLogId(): string {
+  return `LOG-${Date.now()}`;
+}
 
 let provider: EventLogProvider = mockEventLogProvider;
 
@@ -19,4 +25,14 @@ export function setEventLogProvider(nextProvider: EventLogProvider): void {
 
 export async function getRecentEventLogs(): Promise<EventLog[]> {
   return provider.fetchRecentEventLogs();
+}
+
+export async function addEventLog(entry: Omit<EventLog, "id">): Promise<EventLog> {
+  const nextLog: EventLog = {
+    id: createEventLogId(),
+    ...entry,
+  };
+
+  eventLogStore = [nextLog, ...eventLogStore];
+  return Promise.resolve(structuredClone(nextLog));
 }
