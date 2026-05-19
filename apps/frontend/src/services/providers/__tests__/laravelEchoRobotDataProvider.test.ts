@@ -81,7 +81,7 @@ describe("createLaravelEchoRobotDataProvider", () => {
     const provider = createLaravelEchoRobotDataProvider(manager);
     emit("RobotStatusUpdated", baseMessage);
     const status = await provider.fetchRobotStatus();
-    expect((status as Record<string, unknown>)["sentAt"]).toBeUndefined();
+    expect((status as unknown as Record<string, unknown>)["sentAt"]).toBeUndefined();
   });
 
   it("writes 3 metric points to IndexedDB on each update", async () => {
