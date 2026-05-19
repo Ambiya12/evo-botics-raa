@@ -1,28 +1,14 @@
 import { AlertCircle, CheckCircle2, MapPin, UserRound } from "lucide-react";
-import type { SessionFlowStep, VisitorSession } from "../../types/admin";
+import { flowStepLabel } from "../../constants/adminLabels";
+import type { VisitorSession } from "../../types/admin";
+import { Panel } from "../ui/Panel";
+import { StatusBadge, type BadgeTone } from "../ui/StatusBadge";
 
-const flowStepLabel: Record<SessionFlowStep, string> = {
-  WAITING_FOR_QR: "Waiting for QR",
-  VALIDATING_RESERVATION: "Validating reservation",
-  RESERVATION_VALID: "Reservation valid",
-  BADGE_DISTRIBUTION: "Badge distribution",
-  GUIDING: "Guiding",
-  ARRIVED: "Arrived",
-  RETURNING_HOME: "Returning home",
-  ERROR: "Error",
-};
-
-function StatusBadge({
-  label,
-  tone = "neutral",
-}: {
-  label: string;
-  tone?: "success" | "warning" | "danger" | "neutral" | "mock";
-}) {
-  return <span className={`status-badge status-badge--${tone}`}>{label}</span>;
+interface CurrentVisitorSessionPanelProps {
+  session: VisitorSession | null;
 }
 
-function reservationTone(status: VisitorSession["reservationStatus"]): "success" | "warning" | "danger" {
+function reservationTone(status: VisitorSession["reservationStatus"]): BadgeTone {
   if (status === "valid") {
     return "success";
   }
@@ -34,46 +20,41 @@ function reservationTone(status: VisitorSession["reservationStatus"]): "success"
   return "danger";
 }
 
-interface CurrentVisitorSessionPanelProps {
-  session: VisitorSession | null;
-}
-
 export function CurrentVisitorSessionPanel({ session }: CurrentVisitorSessionPanelProps) {
   if (!session) {
     return (
-      <section className="panel session-panel" aria-label="Current visitor session">
-        <div className="panel__header">
-          <div>
-            <p className="section-kicker">Current session</p>
-            <h3>No active visitor session</h3>
-          </div>
-          <StatusBadge label="Idle" tone="neutral" />
-        </div>
+      <Panel
+        className="session-panel"
+        eyebrow="Current session"
+        title="No active visitor session"
+        action={<StatusBadge label="Idle" tone="neutral" />}
+        aria-label="Current visitor session"
+      >
         <p className="panel-empty">The robot is waiting for the next visitor check-in.</p>
-      </section>
+      </Panel>
     );
   }
 
   return (
-    <section className="panel session-panel" aria-label="Current visitor session">
-      <div className="panel__header">
-        <div>
-          <p className="section-kicker">Current session</p>
-          <h3>{session.id}</h3>
-        </div>
+    <Panel
+      className="session-panel"
+      eyebrow="Current session"
+      title={session.id}
+      action={
         <StatusBadge
           label={session.reservationStatus}
           tone={reservationTone(session.reservationStatus)}
         />
-      </div>
-
+      }
+      aria-label="Current visitor session"
+    >
       <div className="session-hero">
         <div>
           <strong>{session.visitorName}</strong>
           <span>{session.company}</span>
         </div>
         <div className="session-hero__room">
-          <MapPin aria-hidden="true" size={18} />
+          <MapPin aria-hidden="true" size={17} />
           {session.room}
         </div>
       </div>
@@ -119,6 +100,6 @@ export function CurrentVisitorSessionPanel({ session }: CurrentVisitorSessionPan
           </dd>
         </div>
       </dl>
-    </section>
+    </Panel>
   );
 }
