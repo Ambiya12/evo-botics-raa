@@ -1,4 +1,7 @@
 import { Bell, RefreshCw, Search } from "lucide-react";
+import { StatusBadge } from "../ui/StatusBadge";
+import { connectionLabel, connectionTone } from "../../constants/adminLabels";
+import type { ConnectionStatus } from "../../types/admin";
 
 interface TopbarProps {
   searchQuery: string;
@@ -6,6 +9,7 @@ interface TopbarProps {
   lastSyncedAt: string | null;
   isRefreshing: boolean;
   onRefresh: () => void;
+  connectionStatus: ConnectionStatus;
 }
 
 export function Topbar({
@@ -14,6 +18,7 @@ export function Topbar({
   lastSyncedAt,
   isRefreshing,
   onRefresh,
+  connectionStatus,
 }: TopbarProps) {
   return (
     <header className="topbar">
@@ -23,6 +28,10 @@ export function Topbar({
         <p className="topbar__meta">
           {lastSyncedAt ? `Last synced ${lastSyncedAt}` : "Preparing live telemetry"}
         </p>
+        <StatusBadge
+          label={connectionLabel[connectionStatus]}
+          tone={connectionTone[connectionStatus]}
+        />
       </div>
 
       <div className="topbar__actions">
@@ -43,9 +52,17 @@ export function Topbar({
           onClick={onRefresh}
           disabled={isRefreshing}
         >
-          <RefreshCw aria-hidden="true" size={18} className={isRefreshing ? "spin" : ""} />
+          <RefreshCw
+            aria-hidden="true"
+            size={18}
+            className={isRefreshing ? "spin" : ""}
+          />
         </button>
-        <button className="icon-button" type="button" aria-label="Open notifications">
+        <button
+          className="icon-button"
+          type="button"
+          aria-label="Open notifications"
+        >
           <Bell aria-hidden="true" size={18} />
         </button>
       </div>

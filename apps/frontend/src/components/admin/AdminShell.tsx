@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { ConnectionStatus } from "../../types/admin";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -9,6 +10,7 @@ interface AdminShellProps {
   lastSyncedAt: string | null;
   isRefreshing: boolean;
   onRefresh: () => void;
+  connectionStatus: ConnectionStatus;
 }
 
 export function AdminShell({
@@ -18,6 +20,7 @@ export function AdminShell({
   lastSyncedAt,
   isRefreshing,
   onRefresh,
+  connectionStatus,
 }: AdminShellProps) {
   return (
     <div className="app-shell">
@@ -29,6 +32,7 @@ export function AdminShell({
           lastSyncedAt={lastSyncedAt}
           isRefreshing={isRefreshing}
           onRefresh={onRefresh}
+          connectionStatus={connectionStatus}
         />
         {children}
       </main>

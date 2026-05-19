@@ -52,6 +52,7 @@ export function AdminDashboard() {
     isRefreshing,
     error,
     lastSyncedAt,
+    connectionStatus,
     refresh,
     acknowledgeIncident,
     requestEmergencyStop,
@@ -84,6 +85,7 @@ export function AdminDashboard() {
       onRefresh={() => {
         void refresh();
       }}
+      connectionStatus={connectionStatus}
     >
       {error ? (
         <div className="dashboard-alert" role="alert">
