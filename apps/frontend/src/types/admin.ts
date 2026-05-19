@@ -12,7 +12,7 @@ export type RobotState =
 
 export type ServiceStatus = "online" | "degraded" | "offline" | "mock";
 
-export type ConnectionStatus = "mock" | "disconnected" | "connected_ros";
+export type ConnectionStatus = "mock" | "connecting" | "connected_ros" | "disconnected" | "error";
 
 export type Severity = "info" | "warning" | "error" | "critical";
 

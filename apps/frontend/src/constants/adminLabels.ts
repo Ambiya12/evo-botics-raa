@@ -33,8 +33,10 @@ export const flowStepLabel: Record<SessionFlowStep, string> = {
 
 export const connectionLabel: Record<ConnectionStatus, string> = {
   mock: "Mock mode",
-  disconnected: "Disconnected",
+  connecting: "Connecting...",
   connected_ros: "ROS connected",
+  disconnected: "Disconnected",
+  error: "Connection error",
 };
 
 export const serviceTone: Record<ServiceStatus, BadgeTone> = {
@@ -46,8 +48,10 @@ export const serviceTone: Record<ServiceStatus, BadgeTone> = {
 
 export const connectionTone: Record<ConnectionStatus, BadgeTone> = {
   mock: "muted",
-  disconnected: "danger",
+  connecting: "warning",
   connected_ros: "success",
+  disconnected: "danger",
+  error: "danger",
 };
 
 export const severityTone: Record<Severity, BadgeTone> = {
