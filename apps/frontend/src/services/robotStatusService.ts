@@ -1,22 +1,17 @@
-import { robotStatus } from "../data/mockAdminData";
 import type { RobotStatus } from "../types/admin";
+import { createMockRobotDataProvider } from "./providers/mockRobotDataProvider";
+import type { RobotStatusProvider } from "./providers/robotStatusProvider";
 
-export interface RobotStatusProvider {
-  fetchRobotStatus: () => Promise<RobotStatus>;
-}
+const defaultProvider: RobotStatusProvider = createMockRobotDataProvider();
 
-const mockRobotStatusProvider: RobotStatusProvider = {
-  async fetchRobotStatus() {
-    return Promise.resolve(structuredClone(robotStatusStore));
-  },
-};
-
-let robotStatusStore: RobotStatus = structuredClone(robotStatus);
-
-let provider: RobotStatusProvider = mockRobotStatusProvider;
+let provider: RobotStatusProvider = defaultProvider;
 
 export function setRobotStatusProvider(nextProvider: RobotStatusProvider): void {
   provider = nextProvider;
+}
+
+export function resetRobotStatusProvider(): void {
+  provider = defaultProvider;
 }
 
 export async function getRobotStatus(): Promise<RobotStatus> {
@@ -24,28 +19,5 @@ export async function getRobotStatus(): Promise<RobotStatus> {
 }
 
 export async function setEmergencyStopState(isActive: boolean): Promise<void> {
-  robotStatusStore = {
-    ...robotStatusStore,
-    state: isActive ? "EMERGENCY_STOP" : "IDLE",
-    emergencyStop: isActive,
-    lastIncidentSummary: isActive
-      ? "Emergency stop triggered by operator"
-      : robotStatusStore.lastIncidentSummary,
-  };
-
-  if (isActive) {
-    robotStatusStore.services = robotStatusStore.services.map((service) => {
-      if (service.name !== "Navigation") {
-        return service;
-      }
-
-      return {
-        ...service,
-        status: "degraded",
-        detail: "Emergency stop active in mock mode",
-      };
-    });
-  }
-
-  return Promise.resolve();
+  return provider.setEmergencyStopState(isActive);
 }
