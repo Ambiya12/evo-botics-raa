@@ -11,12 +11,13 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CurrentVisitorSessionPanel } from "../components/admin/CurrentVisitorSessionPanel";
+import { EventLogTable } from "../components/admin/EventLogTable";
 import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import {
-  eventLogs,
   incidents,
   navigationItems,
 } from "../data/mockAdminData";
+import { getRecentEventLogs } from "../services/eventLogService";
 import { getRobotStatus } from "../services/robotStatusService";
 import { getCurrentVisitorSession } from "../services/visitorSessionService";
 import type { EventLog, Incident, RobotStatus, ServiceStatus, VisitorSession } from "../types/admin";
@@ -115,56 +116,6 @@ function RobotHealthPanel({ robotStatus }: { robotStatus: RobotStatus }) {
   );
 }
 
-function EventLogTable({ logs }: { logs: EventLog[] }) {
-  return (
-    <section className="panel panel--wide">
-      <div className="panel__header">
-        <div>
-          <p className="section-kicker">Phase 2 logging</p>
-          <h3>Recent events</h3>
-        </div>
-        <StatusBadge label={`${logs.length} events`} />
-      </div>
-
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Source</th>
-              <th>Severity</th>
-              <th>Message</th>
-            </tr>
-          </thead>
-          <tbody>
-            {logs.map((log) => (
-              <tr key={log.id}>
-                <td>{log.timestamp}</td>
-                <td>{log.source}</td>
-                <td>
-                  <StatusBadge
-                    label={log.severity}
-                    tone={
-                      log.severity === "critical"
-                        ? "danger"
-                        : log.severity === "warning"
-                          ? "warning"
-                          : log.severity === "error"
-                            ? "danger"
-                            : "neutral"
-                    }
-                  />
-                </td>
-                <td>{log.message}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function IncidentList({ items }: { items: Incident[] }) {
   return (
     <section className="panel">
@@ -236,6 +187,7 @@ function SafetyActions() {
 export function AdminDashboard() {
   const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
   const [currentSession, setCurrentSession] = useState<VisitorSession | null>(null);
+  const [eventLogs, setEventLogs] = useState<EventLog[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -254,11 +206,20 @@ export function AdminDashboard() {
       }
     };
 
+    const loadEventLogs = async () => {
+      const logs = await getRecentEventLogs();
+      if (mounted) {
+        setEventLogs(logs);
+      }
+    };
+
     void loadStatus();
     void loadSession();
+    void loadEventLogs();
     const intervalId = window.setInterval(() => {
       void loadStatus();
       void loadSession();
+      void loadEventLogs();
     }, 5000);
 
     return () => {

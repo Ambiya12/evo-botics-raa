@@ -86,6 +86,8 @@ export const eventLogs: EventLog[] = [
     severity: "info",
     message: "Guidance mission active toward Meeting Room A.",
     sessionId: "SES-2026-014",
+    action: "start_guidance",
+    status: "succeeded",
   },
   {
     id: "LOG-002",
@@ -94,6 +96,8 @@ export const eventLogs: EventLog[] = [
     severity: "info",
     message: "Reservation RES-2026-118 validated in 842ms.",
     sessionId: "SES-2026-014",
+    action: "validate_reservation",
+    status: "succeeded",
   },
   {
     id: "LOG-003",
@@ -102,6 +106,8 @@ export const eventLogs: EventLog[] = [
     severity: "info",
     message: "QR payload received from mock scanner.",
     sessionId: "SES-2026-014",
+    action: "scan_qr",
+    status: "succeeded",
   },
   {
     id: "LOG-004",
@@ -109,6 +115,29 @@ export const eventLogs: EventLog[] = [
     source: "battery",
     severity: "warning",
     message: "Battery below 80%; continue monitoring before demo run.",
+    sessionId: null,
+    action: "monitor_battery",
+    status: "pending",
+  },
+  {
+    id: "LOG-005",
+    timestamp: "14:18:27",
+    source: "notification",
+    severity: "info",
+    message: "Staff notification sent for low battery warning.",
+    sessionId: null,
+    action: "notify_staff",
+    status: "succeeded",
+  },
+  {
+    id: "LOG-006",
+    timestamp: "13:54:09",
+    source: "reservation_api",
+    severity: "error",
+    message: "Reservation API timeout while validating RES-2026-103.",
+    sessionId: "SES-2026-011",
+    action: "validate_reservation",
+    status: "failed",
   },
 ];
 

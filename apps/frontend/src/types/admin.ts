@@ -16,6 +16,16 @@ export type ConnectionStatus = "mock" | "disconnected" | "connected_ros";
 
 export type Severity = "info" | "warning" | "error" | "critical";
 
+export type EventSource =
+  | "reservation_api"
+  | "navigation"
+  | "qr_scanner"
+  | "admin"
+  | "notification"
+  | "battery";
+
+export type EventActionStatus = "pending" | "succeeded" | "failed";
+
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
 
 export type SessionFlowStep =
@@ -67,10 +77,12 @@ export interface VisitorSession {
 export interface EventLog {
   id: string;
   timestamp: string;
-  source: string;
+  source: EventSource;
   severity: Severity;
   message: string;
-  sessionId?: string;
+  sessionId: string | null;
+  action: string;
+  status: EventActionStatus;
 }
 
 export interface Incident {
