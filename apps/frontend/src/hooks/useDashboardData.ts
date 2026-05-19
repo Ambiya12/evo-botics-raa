@@ -2,9 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { triggerEmergencyStop } from "../services/adminControlService";
 import { getRecentEventLogs } from "../services/eventLogService";
 import { acknowledgeIncidentById, getIncidents } from "../services/incidentService";
+import {
+  getConnectionManagerStatus,
+  subscribeConnectionStatus,
+} from "../services/providers/connectionManagerStore";
 import { getRobotStatus } from "../services/robotStatusService";
 import { getCurrentVisitorSession } from "../services/visitorSessionService";
-import type { EventLog, Incident, RobotStatus, VisitorSession } from "../types/admin";
+import type { ConnectionStatus, EventLog, Incident, RobotStatus, VisitorSession } from "../types/admin";
 
 interface DashboardDataState {
   robotStatus: RobotStatus | null;
@@ -38,6 +42,9 @@ function toSyncTimeLabel(date: Date): string {
 
 export function useDashboardData() {
   const [state, setState] = useState<DashboardDataState>(initialState);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(
+    getConnectionManagerStatus(),
+  );
   const mountedRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -84,6 +91,10 @@ export function useDashboardData() {
   }, []);
 
   useEffect(() => {
+    return subscribeConnectionStatus(setConnectionStatus);
+  }, []);
+
+  useEffect(() => {
     mountedRef.current = true;
     void refresh();
 
@@ -113,10 +124,11 @@ export function useDashboardData() {
   return useMemo(
     () => ({
       ...state,
+      connectionStatus,
       refresh,
       acknowledgeIncident,
       requestEmergencyStop,
     }),
-    [acknowledgeIncident, refresh, requestEmergencyStop, state],
+    [acknowledgeIncident, connectionStatus, refresh, requestEmergencyStop, state],
   );
 }
