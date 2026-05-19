@@ -143,12 +143,31 @@ export const eventLogs: EventLog[] = [
 
 export const incidents: Incident[] = [
   {
+    id: "INC-023",
+    title: "Robot blocked in hallway",
+    status: "open",
+    severity: "critical",
+    timestamp: "14:33",
+    description: "Obstacle persisted for over 20s while robot was guiding a visitor.",
+    relatedSessionId: "SES-2026-014",
+  },
+  {
+    id: "INC-022",
+    title: "Invalid reservation detected",
+    status: "open",
+    severity: "warning",
+    timestamp: "14:29",
+    description: "QR payload did not match a valid reservation in the current time window.",
+    relatedSessionId: "SES-2026-013",
+  },
+  {
     id: "INC-021",
     title: "Battery monitoring warning",
     status: "acknowledged",
     severity: "warning",
     timestamp: "14:22",
     description: "Battery dropped below the preferred demo threshold.",
+    relatedSessionId: null,
   },
   {
     id: "INC-020",
@@ -157,5 +176,6 @@ export const incidents: Incident[] = [
     severity: "error",
     timestamp: "13:54",
     description: "Mock API exceeded the 3s validation target during test.",
+    relatedSessionId: "SES-2026-011",
   },
 ];

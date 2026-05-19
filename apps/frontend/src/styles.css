@@ -485,6 +485,38 @@ td {
   font-size: 0.82rem;
 }
 
+.incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.incident-meta span {
+  margin-top: 8px;
+}
+
+.incident-actions {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.incident-ack-button {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #334155;
+  background: var(--surface-muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.incident-ack-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .safety-panel {
   display: grid;
   gap: 14px;

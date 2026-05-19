@@ -92,6 +92,7 @@ export interface Incident {
   severity: Exclude<Severity, "info">;
   timestamp: string;
   description: string;
+  relatedSessionId: string | null;
 }
 
 export interface NavigationItem {

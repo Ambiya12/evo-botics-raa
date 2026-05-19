@@ -1,5 +1,4 @@
 import {
-  AlertTriangle,
   Bell,
   CircleStop,
   Pause,
@@ -12,11 +11,12 @@ import {
 import { useEffect, useState } from "react";
 import { CurrentVisitorSessionPanel } from "../components/admin/CurrentVisitorSessionPanel";
 import { EventLogTable } from "../components/admin/EventLogTable";
+import { IncidentMonitoringPanel } from "../components/admin/IncidentMonitoringPanel";
 import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import {
-  incidents,
   navigationItems,
 } from "../data/mockAdminData";
+import { acknowledgeIncidentById, getIncidents } from "../services/incidentService";
 import { getRecentEventLogs } from "../services/eventLogService";
 import { getRobotStatus } from "../services/robotStatusService";
 import { getCurrentVisitorSession } from "../services/visitorSessionService";
@@ -116,36 +116,6 @@ function RobotHealthPanel({ robotStatus }: { robotStatus: RobotStatus }) {
   );
 }
 
-function IncidentList({ items }: { items: Incident[] }) {
-  return (
-    <section className="panel">
-      <div className="panel__header">
-        <div>
-          <p className="section-kicker">Staff exceptions</p>
-          <h3>Incidents</h3>
-        </div>
-        <AlertTriangle aria-hidden="true" size={20} />
-      </div>
-
-      <div className="incident-list">
-        {items.map((incident) => (
-          <article className="incident-item" key={incident.id}>
-            <div>
-              <strong>{incident.title}</strong>
-              <p>{incident.description}</p>
-              <span>{incident.timestamp}</span>
-            </div>
-            <StatusBadge
-              label={incident.status}
-              tone={incident.status === "resolved" ? "success" : "warning"}
-            />
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function SafetyActions() {
   return (
     <section className="panel safety-panel">
@@ -188,6 +158,7 @@ export function AdminDashboard() {
   const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
   const [currentSession, setCurrentSession] = useState<VisitorSession | null>(null);
   const [eventLogs, setEventLogs] = useState<EventLog[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
 
   useEffect(() => {
     let mounted = true;
@@ -213,13 +184,22 @@ export function AdminDashboard() {
       }
     };
 
+    const loadIncidents = async () => {
+      const incidentItems = await getIncidents();
+      if (mounted) {
+        setIncidents(incidentItems);
+      }
+    };
+
     void loadStatus();
     void loadSession();
     void loadEventLogs();
+    void loadIncidents();
     const intervalId = window.setInterval(() => {
       void loadStatus();
       void loadSession();
       void loadEventLogs();
+      void loadIncidents();
     }, 5000);
 
     return () => {
@@ -227,6 +207,12 @@ export function AdminDashboard() {
       window.clearInterval(intervalId);
     };
   }, []);
+
+  const handleAcknowledgeIncident = async (incidentId: string) => {
+    await acknowledgeIncidentById(incidentId);
+    const updatedIncidents = await getIncidents();
+    setIncidents(updatedIncidents);
+  };
 
   if (!robotStatus) {
     return (
@@ -253,7 +239,10 @@ export function AdminDashboard() {
           <CurrentVisitorSessionPanel session={currentSession} />
           <SafetyActions />
           <EventLogTable logs={eventLogs} />
-          <IncidentList items={incidents} />
+          <IncidentMonitoringPanel
+            incidents={incidents}
+            onAcknowledge={handleAcknowledgeIncident}
+          />
         </div>
       </main>
     </div>
