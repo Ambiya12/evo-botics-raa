@@ -85,3 +85,23 @@ An affordable, autonomous service robot capable of:
 | Frontend | React.js + ARIA |
 | Communication | MQTT / WebSockets |
 | Hardware | Yahboom Transbot (Jetson Nano) |
+
+## Admin Dashboard
+
+The admin dashboard is currently implemented in mock mode so the team can work
+without direct access to the robot. It provides the operator layout for robot
+status, current visitor session, event logs, incidents, and safety actions.
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173/` in a browser.
+
+Useful checks:
+
+```bash
+npm run lint
+npm run build
+```
