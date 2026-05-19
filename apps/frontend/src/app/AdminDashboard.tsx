@@ -6,6 +6,7 @@ import { IncidentMonitoringPanel } from "../components/admin/IncidentMonitoringP
 import { RobotHealthPanel } from "../components/admin/RobotHealthPanel";
 import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import { SafetyActions } from "../components/admin/SafetyActions";
+import { TimeSeriesPanel } from "../components/admin/TimeSeriesPanel";
 import { DashboardSkeleton } from "../components/ui/Skeleton";
 import { useDashboardData } from "../hooks/useDashboardData";
 import type { EventLog, Incident } from "../types/admin";
@@ -100,6 +101,7 @@ export function AdminDashboard() {
       ) : (
         <>
           <RobotStatusOverview robotStatus={robotStatus} />
+          <TimeSeriesPanel />
           <div className="dashboard-grid">
             <RobotHealthPanel robotStatus={robotStatus} />
             <CurrentVisitorSessionPanel session={currentSession} />
