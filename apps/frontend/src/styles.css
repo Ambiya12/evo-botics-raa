@@ -375,6 +375,39 @@ dt {
   white-space: nowrap;
 }
 
+.session-status-line,
+.session-error-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.session-status-line {
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+.session-error-line {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.panel-empty {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.session-inline-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .detail-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -69,9 +69,13 @@ export const currentSession: VisitorSession = {
   company: "Novea Labs",
   host: "Jules Bourrin",
   room: "Meeting Room A",
-  step: "GUIDING",
-  startedAt: "14:28",
+  reservationId: "RES-2026-118",
   reservationStatus: "valid",
+  checkInTime: "14:28",
+  flowStep: "GUIDING",
+  statusMessage: "Visitor is being guided to Meeting Room A",
+  flowError: null,
+  updatedAt: "14:32:18",
 };
 
 export const eventLogs: EventLog[] = [

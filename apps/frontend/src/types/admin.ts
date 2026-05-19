@@ -18,6 +18,16 @@ export type Severity = "info" | "warning" | "error" | "critical";
 
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
 
+export type SessionFlowStep =
+  | "WAITING_FOR_QR"
+  | "VALIDATING_RESERVATION"
+  | "RESERVATION_VALID"
+  | "BADGE_DISTRIBUTION"
+  | "GUIDING"
+  | "ARRIVED"
+  | "RETURNING_HOME"
+  | "ERROR";
+
 export interface RobotStatus {
   id: string;
   name: string;
@@ -45,9 +55,13 @@ export interface VisitorSession {
   company: string;
   host: string;
   room: string;
-  step: RobotState;
-  startedAt: string;
+  reservationId: string;
   reservationStatus: "valid" | "invalid" | "expired" | "pending";
+  checkInTime: string;
+  flowStep: SessionFlowStep;
+  statusMessage: string;
+  flowError: string | null;
+  updatedAt: string;
 }
 
 export interface EventLog {

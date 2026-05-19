@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   Bell,
   CircleStop,
-  MapPin,
   Pause,
   Play,
   Radio,
@@ -11,26 +10,16 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CurrentVisitorSessionPanel } from "../components/admin/CurrentVisitorSessionPanel";
 import { RobotStatusOverview } from "../components/admin/RobotStatusOverview";
 import {
-  currentSession,
   eventLogs,
   incidents,
   navigationItems,
 } from "../data/mockAdminData";
 import { getRobotStatus } from "../services/robotStatusService";
-import type { EventLog, Incident, RobotStatus, ServiceStatus } from "../types/admin";
-
-const stateLabel: Record<RobotStatus["state"], string> = {
-  IDLE: "Idle",
-  WAITING_FOR_QR: "Waiting for QR",
-  VALIDATING_RESERVATION: "Validating reservation",
-  GUIDING: "Guiding visitor",
-  ARRIVED: "Arrived",
-  RETURNING_HOME: "Returning home",
-  ERROR: "Error",
-  EMERGENCY_STOP: "Emergency stop",
-};
+import { getCurrentVisitorSession } from "../services/visitorSessionService";
+import type { EventLog, Incident, RobotStatus, ServiceStatus, VisitorSession } from "../types/admin";
 
 function formatStatus(status: ServiceStatus) {
   return status.charAt(0).toUpperCase() + status.slice(1);
@@ -122,46 +111,6 @@ function RobotHealthPanel({ robotStatus }: { robotStatus: RobotStatus }) {
           </div>
         ))}
       </div>
-    </section>
-  );
-}
-
-function CurrentSessionPanel() {
-  return (
-    <section className="panel session-panel">
-      <div className="panel__header">
-        <div>
-          <p className="section-kicker">Current session</p>
-          <h3>{currentSession.id}</h3>
-        </div>
-        <StatusBadge label="Reservation valid" tone="success" />
-      </div>
-
-      <div className="session-hero">
-        <div>
-          <strong>{currentSession.visitorName}</strong>
-          <span>{currentSession.company}</span>
-        </div>
-        <div className="session-hero__room">
-          <MapPin aria-hidden="true" size={18} />
-          {currentSession.room}
-        </div>
-      </div>
-
-      <dl className="detail-list">
-        <div>
-          <dt>Host</dt>
-          <dd>{currentSession.host}</dd>
-        </div>
-        <div>
-          <dt>Started</dt>
-          <dd>{currentSession.startedAt}</dd>
-        </div>
-        <div>
-          <dt>Flow step</dt>
-          <dd>{stateLabel[currentSession.step]}</dd>
-        </div>
-      </dl>
     </section>
   );
 }
@@ -286,6 +235,7 @@ function SafetyActions() {
 
 export function AdminDashboard() {
   const [robotStatus, setRobotStatus] = useState<RobotStatus | null>(null);
+  const [currentSession, setCurrentSession] = useState<VisitorSession | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -297,9 +247,18 @@ export function AdminDashboard() {
       }
     };
 
+    const loadSession = async () => {
+      const session = await getCurrentVisitorSession();
+      if (mounted) {
+        setCurrentSession(session);
+      }
+    };
+
     void loadStatus();
+    void loadSession();
     const intervalId = window.setInterval(() => {
       void loadStatus();
+      void loadSession();
     }, 5000);
 
     return () => {
@@ -330,7 +289,7 @@ export function AdminDashboard() {
         <RobotStatusOverview robotStatus={robotStatus} />
         <div className="dashboard-grid">
           <RobotHealthPanel robotStatus={robotStatus} />
-          <CurrentSessionPanel />
+          <CurrentVisitorSessionPanel session={currentSession} />
           <SafetyActions />
           <EventLogTable logs={eventLogs} />
           <IncidentList items={incidents} />
