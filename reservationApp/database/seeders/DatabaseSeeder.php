@@ -25,13 +25,5 @@ class DatabaseSeeder extends Seeder
         \App\Models\Reservation::factory(10)->create();
 
         \App\Models\Room::factory(10)->create();
-
-        $rooms = Room::all();
-
-        foreach ($rooms as $room) {
-            \App\Models\Session::factory(10)->create([
-                'room_id' => $room->id,
-            ]);
-        }
     }
 }
