@@ -23,5 +23,7 @@ class DatabaseSeeder extends Seeder
         ]);*/
 
         \App\Models\Reservation::factory(10)->create();
+
+        \App\Models\Room::factory(10)->create();
     }
 }
