@@ -2,14 +2,14 @@
 
 namespace Database\Factories;
 
-use App\Models\Session;
+use App\Models\BookingSession;
 use App\Models\Room;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<Session>
+ * @extends Factory<BookingSession>
  */
-class SessionFactory extends Factory
+class BookingSessionFactory extends Factory
 {
     /**
      * Define the model's default state.

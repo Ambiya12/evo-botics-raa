@@ -15,9 +15,9 @@ class Room extends Model
         'max_capacity',
     ];
 
-    public function reservations()
+    public function sessions()
     {
-        return $this->hasMany(Reservation::class);
+        return $this->hasMany(BookingSession::class);
     }
 
     public function hasCapacity($query, int $numberOfPeople)

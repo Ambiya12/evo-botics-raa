@@ -3,6 +3,9 @@
 namespace Database\Seeders;
 
 use App\Models\User;
+use App\Models\Reservation;
+use App\Models\Room;
+use App\Models\BookingSession;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -22,14 +25,14 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);*/
 
-        \App\Models\Reservation::factory(10)->create();
+        Reservation::factory(10)->create();
 
-        \App\Models\Room::factory(10)->create();
+        Room::factory(10)->create();
 
         $rooms = Room::all();
 
         foreach ($rooms as $room) {
-            \App\Models\Session::factory(10)->create([
+            BookingSession::factory(10)->create([
                 'room_id' => $room->id,
             ]);
         }

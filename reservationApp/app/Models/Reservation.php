@@ -19,15 +19,20 @@ class Reservation extends Model
         'validated_at',
     ];
 
+    protected $casts = [
+        'reservation_date' => 'datetime',
+        'validated_at' => 'datetime',
+    ];
+
+    public function bookingSession(): BelongsTo
+    {
+        return $this->belongsTo(BookingSession::class);
+    }
+
     protected static function booted()
     {
         static::creating(function ($reservation) {
             $reservation->uuid = (string) Str::uuid();
         });
     }
-
-    protected $casts = [
-        'reservation_date' => 'datetime',
-        'validated_at' => 'datetime',
-    ];
 }

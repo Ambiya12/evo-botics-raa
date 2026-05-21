@@ -3,11 +3,11 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\Session;
+use App\Models\BookingSession;
 use App\Models\Reservation;
 use Illuminate\Support\Facades\DB;
 
-class SessionController extends Controller
+class BookingSessionController extends Controller
 {
     public function bookSession(Request $request) {
         $request->validate([
@@ -19,7 +19,7 @@ class SessionController extends Controller
             'customer_email' => 'required|email',
         ]);
 
-        $sessionsAvailables = Session::where('date', $request->date)
+        $sessionsAvailables = BookingSession::where('date', $request->date)
             ->where('start_at', $request->start_at)
             ->where('end_at', $request->end_at)
             ->where('is_available', true)
@@ -28,18 +28,18 @@ class SessionController extends Controller
         if ($sessionsAvailables->isEmpty()) {
             return response()->json([
                 'status' => 'error',
-                'message' => "Aucune session disponible pour ce créneau horaire."
+                'message' => "Aucune salle disponible pour ce créneau horaire."
             ], 404);
         }
 
         $session = $sessionsAvailables->first(function ($session) use ($request) {
-            return $session->room->capacity >= $request->attendee_count;
+            return $session->room->max_capacity >= $request->attendee_count;
         });
 
         if (!$session) {
             return response()->json([
                 'status' => 'error',
-                'message' => "Aucune session disponible avec une capacité suffisante pour {$request->attendee_count} personnes."
+                'message' => "Aucune salle disponible avec une capacité suffisante pour {$request->attendee_count} personnes."
             ], 404);
         }
 
@@ -48,7 +48,7 @@ class SessionController extends Controller
         });
     }
 
-    private function createReservation(Session $session, Request $request) {
+    private function createReservation(BookingSession $session, Request $request) {
         $reservation = Reservation::create([
             'customer_name' => $request->customer_name,
             'customer_email' => $request->customer_email,
@@ -67,6 +67,6 @@ class SessionController extends Controller
                 'reservation' => $reservation,
                 'session' => $session
             ]
-        ], 201);
+        ], 200);
     }
 }

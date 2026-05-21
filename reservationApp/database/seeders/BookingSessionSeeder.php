@@ -3,10 +3,11 @@
 namespace Database\Seeders;
 
 use App\Models\Room;
+use App\Models\BookingSession;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
-class SessionSeeder extends Seeder
+class BookingSessionSeeder extends Seeder
 {
     /**
      * Run the database seeds.
@@ -16,7 +17,7 @@ class SessionSeeder extends Seeder
         $rooms = Room::all();
 
         foreach ($rooms as $room) {
-            \App\Models\Session::factory(7)->create([
+            BookingSession::factory(1)->create([
                 'room_id' => $room->id,
             ]);
         }
