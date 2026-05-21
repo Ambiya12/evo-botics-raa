@@ -5,7 +5,14 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Interface Robot</title>
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
-
+	<style>
+        body {
+            overflow: hidden;
+            touch-action: none;
+            cursor: none;
+            user-select: none;
+        }
+	</style>
 </head>
 <body>
 {{ $slot }}
