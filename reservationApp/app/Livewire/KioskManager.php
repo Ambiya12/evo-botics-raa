@@ -35,14 +35,13 @@ class KioskManager extends Component
         $this->goToStep('result');
     }
 
-//    public function mount()
-//    {
-//        // Permet d'aller sur /kiosk?debugStep=guide pour voir l'écran guide direct
-//        if (request()->has('debugStep')) {
-//            $this->step = request()->query('debugStep');
-//            $this->resultStatus = request()->query('debugStatus', 'error');
-//        }
-//    }
+    public function mount()
+    {
+        if (request()->has('step')) {
+            $this->step = request()->query('step');
+            $this->resultStatus = request()->query('status', 'error');
+        }
+    }
 
     public function render()
     {
