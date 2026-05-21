@@ -5,6 +5,8 @@ import { Topbar } from "./Topbar";
 
 interface AdminShellProps {
   children: ReactNode;
+  activePage: string;
+  onNavigate: (id: string) => void;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
   lastSyncedAt: string | null;
@@ -15,6 +17,8 @@ interface AdminShellProps {
 
 export function AdminShell({
   children,
+  activePage,
+  onNavigate,
   searchQuery,
   onSearchQueryChange,
   lastSyncedAt,
@@ -24,7 +28,7 @@ export function AdminShell({
 }: AdminShellProps) {
   return (
     <div className="app-shell">
-      <Sidebar />
+      <Sidebar activePage={activePage} onNavigate={onNavigate} />
       <main className="dashboard">
         <Topbar
           searchQuery={searchQuery}

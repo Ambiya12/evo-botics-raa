@@ -1,7 +1,12 @@
 import { memo } from "react";
 import { navigationItems } from "../../data/mockAdminData";
 
-export const Sidebar = memo(function Sidebar() {
+interface SidebarProps {
+  activePage: string;
+  onNavigate: (id: string) => void;
+}
+
+export const Sidebar = memo(function Sidebar({ activePage, onNavigate }: SidebarProps) {
   return (
     <aside className="sidebar" aria-label="Admin navigation">
       <div className="brand">
@@ -17,10 +22,11 @@ export const Sidebar = memo(function Sidebar() {
       <nav className="nav-list">
         {navigationItems.map((item) => (
           <button
-            className={`nav-list__item ${item.active ? "nav-list__item--active" : ""}`}
-            key={item.label}
+            className={`nav-list__item ${item.id === activePage ? "nav-list__item--active" : ""}`}
+            key={item.id}
             type="button"
-            aria-current={item.active ? "page" : undefined}
+            aria-current={item.id === activePage ? "page" : undefined}
+            onClick={() => onNavigate(item.id)}
           >
             <item.icon aria-hidden="true" size={17} strokeWidth={1.8} />
             <span>{item.label}</span>
