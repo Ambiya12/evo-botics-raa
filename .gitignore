@@ -4,3 +4,37 @@ source/
 evo_ws/build/
 evo_ws/install/
 evo_ws/log/
+
+../docs/Images/.DS_Store
+.idea/
+.vscode/
+
+# Exclude environment-specific files
+.env
+.DS_Store
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Laravel-specific files
+/public/storage
+/storage/*.key
+/storage/pail
+Homestead.json
+Homestead.yaml
+
+# Logs and temporary files
+*.log
+/storage/logs/*
+!/storage/logs/.gitignore
+
+# Cache and compiled files
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+!/storage/framework/cache/.gitignore
+!/storage/framework/sessions/.gitignore
+!/storage/framework/testing/.gitignore
+!/storage/framework/views/.gitignore

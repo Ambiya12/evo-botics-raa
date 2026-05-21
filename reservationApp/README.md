@@ -26,5 +26,5 @@ Commencez par cloner le dépôt puis remplissez les champs DB_DATABASE, DB_USERN
 ```
 - Lancez le projet avec :
 ```bash
-npm run dev
+./vendor/bin/sail npm run dev
 ```
