@@ -22,7 +22,6 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
-.docker/
 chown_sail.sh
 .vite/
 mix-manifest.json
