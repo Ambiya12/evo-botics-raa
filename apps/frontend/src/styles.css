@@ -817,6 +817,99 @@ td {
   }
 }
 
+/* ── Arm Status Panel ─────────────────────────────────────────────────── */
+
+.arm-joint-list {
+  display: grid;
+  gap: 10px;
+}
+
+.arm-joint-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  background: rgba(247, 246, 242, 0.78);
+}
+
+.arm-joint-row__header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.arm-joint-row__name {
+  color: var(--ink);
+  font-weight: 720;
+  font-size: 0.9rem;
+}
+
+.arm-joint-row__values {
+  color: var(--ink-muted);
+  font-size: 0.8rem;
+}
+
+.arm-joint-bar-track {
+  height: 6px;
+  background: var(--line);
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+}
+
+.arm-joint-bar-fill {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 999px;
+  transition: left 200ms ease, width 200ms ease;
+}
+
+/* ── Jetson Metrics Panel ───────────────────────────────────────── */
+
+.jetson-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.jetson-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 12px;
+  background: rgba(247, 246, 242, 0.78);
+}
+
+.jetson-gauge--skeleton {
+  min-height: 140px;
+  background: var(--surface-subtle);
+  opacity: 0.6;
+}
+
+.jetson-gauge__label {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.76rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.jetson-gauge__value {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 760;
+}
+
+.jetson-gauge svg {
+  overflow: visible;
+}
+
 @media (max-width: 560px) {
   .dashboard {
     padding: 14px;
@@ -841,4 +934,75 @@ td {
   .incident-actions {
     justify-items: start;
   }
+}
+
+/* ── SLAM Map Panel ──────────────────────────────────────────── */
+
+.slam-panel {
+  min-width: 0;
+}
+
+.slam-canvas-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.slam-canvas {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  cursor: grab;
+  display: block;
+  max-width: 100%;
+  touch-action: none;
+}
+
+.slam-canvas:active {
+  cursor: grabbing;
+}
+
+.slam-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: 0.78rem;
+}
+
+/* ── Video Feed Panel ────────────────────────────────────────── */
+
+.video-feed {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+}
+
+.video-feed__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 240px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  color: var(--ink-muted);
+  background: var(--surface-subtle);
+}
+
+.video-feed__placeholder p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.video-feed__img {
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  display: block;
+}
+
+.dashboard-grid--robot-details {
+  margin-top: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
