@@ -6,7 +6,7 @@
 	<title>Interface Robot</title>
 	@vite(['resources/css/app.css', 'resources/js/app.js'])
 	<style>
-        body {
+        .screen {
             overflow: hidden;
             touch-action: none;
             cursor: none;
