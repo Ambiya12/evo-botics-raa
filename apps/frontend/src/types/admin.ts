@@ -96,7 +96,21 @@ export interface Incident {
 }
 
 export interface NavigationItem {
+  id: string;
   label: string;
   icon: LucideIcon;
-  active?: boolean;
+}
+
+export interface ArmJoint {
+  name: string;
+  position: number;   // radians
+  velocity: number;   // rad/s
+  effort: number;     // N·m
+}
+
+export interface JetsonMetrics {
+  cpuPercent: number;
+  ramPercent: number;
+  gpuTempCelsius: number;
+  cpuTempCelsius: number;
 }

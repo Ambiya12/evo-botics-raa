@@ -8,21 +8,23 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import type {
+  ArmJoint,
   EventLog,
   Incident,
+  JetsonMetrics,
   NavigationItem,
   RobotStatus,
   VisitorSession,
 } from "../types/admin";
 
 export const navigationItems: NavigationItem[] = [
-  { label: "Overview", icon: Gauge, active: true },
-  { label: "Live status", icon: Activity },
-  { label: "Sessions", icon: ClipboardList },
-  { label: "Incidents", icon: Bell },
-  { label: "Map", icon: Map },
-  { label: "Safety", icon: ShieldAlert },
-  { label: "Settings", icon: Settings },
+  { id: "overview", label: "Overview", icon: Gauge },
+  { id: "live-status", label: "Live status", icon: Activity },
+  { id: "sessions", label: "Sessions", icon: ClipboardList },
+  { id: "incidents", label: "Incidents", icon: Bell },
+  { id: "map", label: "Map", icon: Map },
+  { id: "safety", label: "Safety", icon: ShieldAlert },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 export const robotStatus: RobotStatus = {
@@ -179,3 +181,19 @@ export const incidents: Incident[] = [
     relatedSessionId: "SES-2026-011",
   },
 ];
+
+export const armJoints: ArmJoint[] = [
+  { name: "shoulder_pan",   position:  0.42, velocity: 0.0, effort:  1.2 },
+  { name: "shoulder_lift",  position: -1.05, velocity: 0.0, effort:  3.8 },
+  { name: "elbow",          position:  1.57, velocity: 0.0, effort:  2.1 },
+  { name: "wrist_1",        position: -0.78, velocity: 0.0, effort:  0.7 },
+  { name: "wrist_2",        position:  0.00, velocity: 0.0, effort:  0.4 },
+  { name: "wrist_3",        position:  1.05, velocity: 0.0, effort:  0.3 },
+];
+
+export const jetsonMetrics: JetsonMetrics = {
+  cpuPercent:      34,
+  ramPercent:      58,
+  gpuTempCelsius:  42,
+  cpuTempCelsius:  38,
+};
