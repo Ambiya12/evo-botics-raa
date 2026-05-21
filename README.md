@@ -82,6 +82,38 @@ Robot status data goes through a service abstraction in
 provider uses mock data; swap to a rosbridge provider when the real robot is
 available via `setRobotStatusProvider()`.
 
+## Web App — Dev Docker
+
+L'application web (`reservationApp/`) tourne sous Docker via Laravel Sail avec une configuration custom allégée.
+
+**Architecture des services :**
+
+| Service | Image | URL |
+|---|---|---|
+| `laravel.test` | php:8.5-cli-bookworm (custom) | http://localhost |
+| `vite` | node:24-alpine | http://localhost:5173 |
+| `mysql` | mysql:8.4 | localhost:3306 |
+
+**Démarrage :**
+
+```bash
+cd reservationApp
+./vendor/bin/sail up -d
+
+# Premier démarrage uniquement
+./vendor/bin/sail composer install
+docker compose exec vite npm install
+```
+
+**Commandes npm** (node absent du conteneur PHP) :
+
+```bash
+docker compose exec vite npm install <package>
+docker compose exec vite npm run build
+```
+
+Voir `reservationApp/CLAUDE.md` pour le détail complet des commandes.
+
 ## Sprint 0 Quickstart
 
 Use the full guide in `docs/SPRINT0_FULL_GUIDE.md`.
