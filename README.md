@@ -78,24 +78,13 @@ mode without a connected robot, providing the operator layout for robot status,
 current visitor session, event logs, incidents, and safety actions.
 
 Robot status data goes through a service abstraction in
-`apps/frontend/src/services/robotStatusService.ts`. The default
+`reservationApp/resources/js/services/robotStatusService.ts`. The default
 provider uses mock data; swap to a rosbridge provider when the real robot is
 available via `setRobotStatusProvider()`.
 
-## Web App — Frontend / Backend
-
-The web app is split into:
-
-| App | Path | Role |
-|---|---|---|
-| Backend | `apps/backend` | Laravel 12 API, auth, Inertia routes, database |
-| Frontend | `apps/frontend` | React, TypeScript, Vite, Tailwind assets |
-
-The frontend and backend are still connected through Laravel Inertia and the Vite manifest. Laravel serves the page shell, while Vite builds `apps/frontend/src/app.tsx` into `apps/backend/public/build`.
-
 ## Web App — Dev Docker
 
-L'application web tourne sous Docker via Laravel Sail avec une configuration custom allégée.
+L'application web (`reservationApp/`) tourne sous Docker via Laravel Sail avec une configuration custom allégée.
 
 **Architecture des services :**
 
@@ -104,23 +93,29 @@ L'application web tourne sous Docker via Laravel Sail avec une configuration cus
 | `laravel.test` | php:8.5-cli-bookworm (custom) | http://localhost |
 | `vite` | node:24-alpine | http://localhost:5173 |
 | `mysql` | mysql:8.4 | localhost:3306 |
+| `reverb` | php:8.5-cli-bookworm (custom) | ws://localhost:8080 |
+| `robot-listener` | php:8.5-cli-bookworm (custom) | — (daemon rosbridge) |
+| `influxdb` | influxdb:2.7 | http://localhost:8086 |
 
-Open the app through Laravel, not through Vite:
-
-- Dashboard with Docker/Sail: `http://localhost/admin`
-- Dashboard with `php artisan serve`: `http://localhost:8000/admin`
-- `http://localhost:5173` is only the Vite hot-reload asset server.
-
-**Démarrage :**
+**Démarrage (mode mock — sans robot) :**
 
 ```bash
-cd apps/backend
-./vendor/bin/sail up -d
+cd reservationApp
+./vendor/bin/sail up -d laravel.test vite mysql
 
 # Premier démarrage uniquement
 ./vendor/bin/sail composer install
 docker compose exec vite npm install
 ```
+
+**Démarrage complet avec télémétrie temps réel :**
+
+```bash
+cd reservationApp
+./vendor/bin/sail up -d
+```
+
+Voir `reservationApp/README.md` pour le guide complet de connexion au robot.
 
 **Commandes npm** (node absent du conteneur PHP) :
 
@@ -129,4 +124,47 @@ docker compose exec vite npm install <package>
 docker compose exec vite npm run build
 ```
 
-Sans Docker, lancez Laravel depuis `apps/backend` et Vite depuis `apps/frontend`.
+Voir `reservationApp/CLAUDE.md` pour le détail complet des commandes.
+
+## Sprint 0 Quickstart
+
+Use the full guide in `docs/SPRINT0_FULL_GUIDE.md`.
+
+First commands:
+
+```bash
+chmod +x scripts/sprint0_bootstrap.sh
+./scripts/sprint0_bootstrap.sh
+docker compose -f ops/compose/compose.simulation.yml exec -T vnc-gui bash -lc 'source /opt/ros/humble/setup.bash && cd /workspace/evo_ws && colcon build --symlink-install'
+```
+
+## RViz and Gazebo (Docker + Exposed Port)
+
+The GUI is exposed through the web VNC desktop on port `6080`.
+
+- Open desktop: `http://localhost:6080`
+- Service port mapping is defined in `ops/compose/compose.simulation.yml` as `6080:80`.
+
+Best-practice flow:
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml up -d --build
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'source /opt/ros/humble/setup.bash && cd /workspace/evo_ws && colcon build --symlink-install'
+```
+
+Launch M3 Pro in RViz (opens in `localhost:6080` desktop):
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'cd /workspace && ./scripts/dev/open_m3pro_display.sh'
+```
+
+Launch Gazebo Sim (Fortress, opens in `localhost:6080` desktop):
+
+```bash
+docker compose -f ops/compose/compose.simulation.yml exec -T --user ubuntu vnc-gui bash -lc 'cd /workspace && ./scripts/dev/open_gazebo_fortress.sh'
+```
+
+Notes:
+
+- RViz/Gazebo are desktop apps, so they do not expose their own HTTP ports here.
+- You interact with both applications through the VNC web desktop on `localhost:6080`.
