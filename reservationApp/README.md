@@ -33,3 +33,32 @@ En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME
 ```bash
 ./vendor/bin/sail npm run dev
 ```
+
+> Le serveur Laravel tourne sur `http://localhost` (port 80 via Sail). Vite écoute sur `http://localhost:5173` pour le hot reload — gardez les deux terminaux ouverts.
+
+---
+
+## Routes disponibles
+
+| Route    | Description                                      |
+|----------|--------------------------------------------------|
+| `/`      | Page d'accueil / réservation QR code             |
+| `/admin` | Dashboard opérateur (React + Inertia, mode mock) |
+
+Le dashboard `/admin` fonctionne sans robot connecté grâce au mode mock. Pour brancher un vrai robot, configurez le provider rosbridge dans `resources/js/services/robotStatusService.ts`.
+
+---
+
+## Démarrage rapide (sans Docker)
+
+Si vous n'utilisez pas Sail, vous pouvez démarrer les serveurs directement :
+
+```bash
+# Terminal 1 — serveur Laravel
+php artisan serve
+
+# Terminal 2 — serveur Vite (assets React)
+npm run dev
+```
+
+L'application sera disponible sur `http://localhost:8000`.

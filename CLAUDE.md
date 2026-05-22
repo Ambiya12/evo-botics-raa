@@ -1,52 +1,30 @@
-# CLAUDE.md
+# CLAUDE.md — evo-botics-raa (racine)
 
-Evo-Botics RAA est un robot autonome d'accueil pour centres d'affaires (ERP), développé à HETIC par une équipe de 4. Le robot accueille les visiteurs, vérifie les réservations via QR code, les guide vers leur salle et assure une médiation linguistique en temps réel.
+## Mission
 
-## Structure du dépôt
+Robot autonome d'accueil pour centres d'affaires : scan QR, guidage visiteur, médiation linguistique. Seul `reservationApp/` est actif ; les couches ROS2/embarqué sont planifiées.
+
+## Structure
 
 ```
 evo-botics-raa/
-├── reservationApp/    ← App Laravel (réservations QR code + dashboard admin)
-│   ├── resources/js/
-│   │   ├── Components/admin/  ← Dashboard admin opérateur (React 18 + Inertia)
-│   │   ├── Components/ui/     ← Composants UI génériques
-│   │   ├── hooks/             ← Hooks React (useDashboardData, useTimeSeriesData)
-│   │   ├── services/          ← Services WebSocket, providers mock/réel
-│   │   ├── types/             ← Types TypeScript admin
-│   │   └── Pages/Admin/       ← Page Inertia /admin
-│   └── routes/web.php         ← Route /admin (dashboard) + routes réservation
-└── docs/
-    ├── BACKLOG.md         ← Backlog priorisé P0/P1/P2
-    ├── ROADMAP.md         ← Roadmap 5 phases sur 5 mois
-    ├── MVP_DEFINITION.md  ← Périmètre MVP + critères de succès mesurables
-    └── cdc-technique.md   ← CDC complet : use cases, architecture, stack, conventions
+├── reservationApp/       ← App Laravel 12 + React 18 (Inertia) — seule partie active
+├── docs/                 ← BACKLOG.md, ROADMAP.md, MVP_DEFINITION.md, cdc-technique.md
+├── scripts/              ← Scripts bootstrap (sprint0_bootstrap.sh)
+└── .devcontainer/        ← Devcontainer Docker pour ROS2 (non actif en dev web)
 ```
 
-## Stack technique globale
+## Conventions
 
-| Couche              | Techno                              | Statut      |
-|---------------------|-------------------------------------|-------------|
-| OS / Middleware     | Ubuntu 20.04 + ROS2 Humble          | Prévu       |
-| Calcul embarqué     | Jetson Orin NX                      | Prévu       |
-| STT / TTS           | Whisper (local) + Piper TTS         | Prévu       |
-| Traduction / NLU    | Llama ou Gemma (local)              | Prévu       |
-| Vision (QR/badge)   | OpenCV                              | Prévu       |
-| Navigation autonome | Nav2 + SLAM (LiDAR)                 | Prévu       |
-| Contrôle bras       | MoveIt2                             | Prévu       |
-| Comm. admin         | rosbridge_suite WebSocket           | Prévu       |
-| Backend API         | Node.js (réservations + notifs)     | Non démarré |
-| Frontend admin      | React 18 + TypeScript + Inertia.js  | En cours    |
+- Code & commits en anglais, documentation en français.
+- Branches : `main` (stable), `dev` (intégration), `feature/xxx`, `fix/xxx`.
+- Commits : Conventional Commits (`feat:`, `fix:`, `chore:`, etc.).
+- PR : review ≥ 1 membre avant merge sur `main`.
+- Python (ROS2) : PEP 8, `snake_case` variables, `PascalCase` classes.
 
-## Conventions d'équipe
+## Règles importantes
 
-- **Langue** : code & commits en anglais, documentation en français.
-- **Branches** : `main` (prod stable), `dev` (intégration), `feature/xxx`, `fix/xxx`.
-- **Commits** : Conventional Commits (ex: `feat: add qr scanner node`).
-- **PR** : review obligatoire par ≥ 1 membre avant merge sur `main`.
-- **Python (nodes ROS)** : PEP 8, `snake_case` variables, `PascalCase` classes.
-
-## IMPORTANT
-
-- Le backend API Node.js n'a pas encore été démarré — clarifier l'interface rosbridge avant de le créer.
-- Le dashboard admin se développe dans `reservationApp/resources/js/Components/admin/`.
+- IMPORTANT : Le backend API Node.js n'existe pas encore — ne pas le créer sans clarifier l'interface rosbridge.
+- IMPORTANT : Tout le développement web actif se fait dans `reservationApp/` — voir son propre CLAUDE.md.
+- NE JAMAIS merger sur `main` sans review.
 - L'arrêt d'urgence doit réagir en ≤ 1 seconde (critère MVP non négociable).
