@@ -5,4 +5,7 @@ evo_ws/build/
 evo_ws/install/
 evo_ws/log/
 superpowers/
+
+# Claude AI
 CLAUDE.md
+.claude/
