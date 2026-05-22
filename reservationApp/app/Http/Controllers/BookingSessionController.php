@@ -7,6 +7,8 @@ use App\Models\BookingSession;
 use App\Models\Reservation;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\ReservationConfirmed;
 
 class BookingSessionController extends Controller
 {
@@ -65,13 +67,14 @@ class BookingSessionController extends Controller
         $reservation = Reservation::create([
             'customer_name' => $request->customer_name,
             'customer_email' => $request->customer_email,
-            'reservation_date' => $request->date . ' ' . $request->start_at,
             'status' => 'pending',
-            'session_id' => $session->id,
             'attendee_count' => $request->attendee_count,
+            'booking_session_id' => $session->id,
         ]);
 
         $session->update(['is_available' => false]);
+
+        $reservation->load('bookingSession.room');
 
         ActivityLog::create([
             'action' => 'reservation_created',
@@ -83,6 +86,15 @@ class BookingSessionController extends Controller
                 'date' => $request->date,
                 'attendees' => $request->attendee_count
             ]
+        ]);
+
+        Mail::to($reservation->customer_email)->send(new ReservationConfirmed($reservation));
+
+        ActivityLog::create([
+            'action' => 'email_sent',
+            'description' => "Email de confirmation envoyé à {$reservation->customer_email}",
+            'loggable_id' => $reservation->id,
+            'loggable_type' => Reservation::class
         ]);
 
         return response()->json([

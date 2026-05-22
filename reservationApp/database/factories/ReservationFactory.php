@@ -24,8 +24,8 @@ class ReservationFactory extends Factory
             'uuid' => (string) Str::uuid(),
             'customer_name' => $this->faker->name(),
             'customer_email' => $this->faker->unique()->safeEmail(),
-            'reservation_date' => $this->faker->dateTimeBetween('now', '+1 month'),
             'status' => $this->faker->randomElement(['pending', 'validated', 'cancelled', 'expired']),
+            'attendee_count' => $this->faker->numberBetween(5, 20),
             'validated_at' => function (array $attributes) {
                 return $attributes['status'] === 'validated' ? now() : null;
             },

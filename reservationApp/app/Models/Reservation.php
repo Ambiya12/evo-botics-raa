@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Str;
 
 class Reservation extends Model
@@ -14,14 +15,15 @@ class Reservation extends Model
         'uuid',
         'customer_name',
         'customer_email',
-        'reservation_date',
         'status',
+        'attendee_count',
         'validated_at',
+        'booking_session_id',
     ];
 
     protected $casts = [
-        'reservation_date' => 'datetime',
         'validated_at' => 'datetime',
+        'attendee_count' => 'integer',
     ];
 
     public function bookingSession(): BelongsTo
