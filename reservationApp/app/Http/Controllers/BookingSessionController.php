@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\BookingSession;
 use App\Models\Reservation;
+use App\Models\ActivityLog;
 use Illuminate\Support\Facades\DB;
 
 class BookingSessionController extends Controller
@@ -26,6 +27,12 @@ class BookingSessionController extends Controller
             ->get();
 
         if ($sessionsAvailables->isEmpty()) {
+            ActivityLog::create([
+                'action' => 'booking_failed_no_slot',
+                'description' => "Échec : Aucun créneau libre le {$request->date} à {$request->start_at}",
+                'payload' => $request->all()
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => "Aucune salle disponible pour ce créneau horaire."
@@ -37,6 +44,12 @@ class BookingSessionController extends Controller
         });
 
         if (!$session) {
+            ActivityLog::create([
+                'action' => 'booking_failed_capacity',
+                'description' => "Échec : Salles complètes pour {$request->attendee_count} personnes le {$request->date}",
+                'payload' => $request->all()
+            ]);
+
             return response()->json([
                 'status' => 'error',
                 'message' => "Aucune salle disponible avec une capacité suffisante pour {$request->attendee_count} personnes."
@@ -59,6 +72,18 @@ class BookingSessionController extends Controller
         ]);
 
         $session->update(['is_available' => false]);
+
+        ActivityLog::create([
+            'action' => 'reservation_created',
+            'description' => "Nouvelle réservation pour {$request->customer_name} dans la salle {$session->room->name}",
+            'loggable_id' => $reservation->id,
+            'loggable_type' => Reservation::class,
+            'payload' => [
+                'room_id' => $session->room_id,
+                'date' => $request->date,
+                'attendees' => $request->attendee_count
+            ]
+        ]);
 
         return response()->json([
             'status' => 'success',
