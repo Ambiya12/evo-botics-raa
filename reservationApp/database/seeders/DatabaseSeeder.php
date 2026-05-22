@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Reservation;
 use App\Models\Room;
 use App\Models\BookingSession;
+use App\Models\ActivityLog;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
@@ -36,5 +37,7 @@ class DatabaseSeeder extends Seeder
                 'room_id' => $room->id,
             ]);
         }
+
+        ActivityLog::factory(10)->create();
     }
 }
