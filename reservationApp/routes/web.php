@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\ProfileController;
 use App\Livewire\KioskManager;
+use App\Livewire\Reservation;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -16,6 +17,8 @@ Route::get('/', function () {
 });
 
 Route::get('/kiosk', KioskManager::class);
+
+Route::get('/reservation', Reservation::class);
 
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
