@@ -1,3 +1,4 @@
+<div>
 @if($step === 'welcome')
 	<div class="screen">
 		<div class="flex items-center justify-center min-h-screen bg-white overflow-hidden relative">
@@ -28,21 +29,12 @@
 						<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 5.25 7.5 7.5 7.5-7.5m-15 6 7.5 7.5 7.5-7.5" />
 					</svg>
 
-					<div class="flex items-center justify-center ">
-						<video id="camera" class="w-64 h-64 bg-black rounded-xl object-cover border-4 border-dashed border-gray-400 -scale-x-100" autoplay playsinline></video>
-						<div class="scanner-animation"></div>
+					<div class="flex items-center justify-center">
+						<div id="qr-reader" class="w-64 h-64 rounded-xl overflow-hidden border-4 border-dashed border-gray-400 -scale-x-100 [&_video]:w-full [&_video]:h-full [&_video]:object-cover"></div>
 					</div>
-					<!-- Input invisible pour capturer le scanner (souvent reconnu comme clavier) -->
-					<script>
-                        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-                            .then((stream) => {document.getElementById('camera').srcObject = stream;})
-                            .catch((err) => {console.error('Erreur d\'accès à la caméra :', err);});
-					</script>
 				</div>
 			</div>
 		</div>
-		<!-- Transition auto vers scan après 3s par exemple -->
-		<div x-init="setTimeout(() => $wire.goToStep('validating'), 3000)"></div>
 	</div>
 	
 @elseif($step === 'validating')
@@ -64,6 +56,9 @@
 			</svg>
 			<h1 class="mt-4 text-8xl font-bold text-green-700">Success</h1>
 			<p class="mt-2 text-green-600 text-4xl">Your reservation has been successfully validated!</p>
+			@if(!empty($reservation))
+				<p class="mt-2 text-green-500 text-2xl">{{ $reservation['name'] }} • {{ $reservation['date'] }} • {{ $reservation['startTime'] }} — {{ $reservation['endTime'] }}</p>
+			@endif
 		@else
 			<svg class="size-20 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
 				<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
@@ -91,13 +86,57 @@
 		</div>
 	</div>
 @endif
+</div>
 
 @script
     <script>
+        let scannerInstance = null;
+
+        async function startScanner() {
+            const el = document.getElementById('qr-reader');
+            if (!el) return;
+
+            if (scannerInstance) {
+                try { await scannerInstance.stop(); } catch (e) {}
+                scannerInstance = null;
+            }
+
+            scannerInstance = new Html5Qrcode('qr-reader');
+            try {
+                await scannerInstance.start(
+                    { facingMode: 'environment' },
+                    { fps: 10, qrbox: { width: 250, height: 250 } },
+                    async (decodedText) => {
+                        try { await scannerInstance.stop(); } catch (e) {}
+                        scannerInstance = null;
+                        $wire.processScan(decodedText);
+                    }
+                );
+            } catch (err) {
+                console.error('QR scanner error:', err);
+                setTimeout(startScanner, 2000);
+            }
+        }
+
+        async function stopScanner() {
+            if (scannerInstance) {
+                try { await scannerInstance.stop(); } catch (e) {}
+                scannerInstance = null;
+            }
+        }
+
         Livewire.on('start-timer', (event) => {
             setTimeout(() => {
                 $wire.goToStep(event.nextStep);
             }, event.delay);
+        });
+
+        document.addEventListener('livewire:navigated', () => {
+            if ($wire.step === 'welcome') {
+                setTimeout(startScanner, 300);
+            } else {
+                stopScanner();
+            }
         });
     </script>
 @endscript

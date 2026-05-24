@@ -2,6 +2,9 @@
 
 namespace App\Livewire;
 
+use App\Mail\ReservationConfirmation;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
@@ -43,11 +46,38 @@ class Reservation extends Component
 
     public function checkAvailability()
     {
-        // Simulation : 70% de chance qu'une salle soit trouvée
         $this->roomFound = rand(1, 10) <= 7;
-        $this->resultMessage = $this->roomFound
-            ? 'A room has been found for your reservation! You will receive your confirmation email.'
-            : 'Sorry, no rooms are available for this time slot. Please try another time.';
+
+        if ($this->roomFound) {
+            if (empty($this->email)) {
+                $this->resultMessage = 'No email address provided.';
+                $this->step = 'result';
+                return;
+            }
+
+            try {
+                Mail::mailer('smtp')->to($this->email)->send(new ReservationConfirmation(
+                    name: $this->name,
+                    email: $this->email,
+                    date: $this->selectedDate,
+                    startTime: $this->selectedStartTime,
+                    endTime: $this->selectedEndTime,
+                    people: $this->peopleCount,
+                ));
+                $this->resultMessage = 'A room has been found for your reservation! You will receive your confirmation email.';
+            } catch (\Throwable $e) {
+                Log::error('Mail send failed: ' . $e->getMessage(), [
+                    'email' => $this->email,
+                    'host' => config('mail.mailers.smtp.host'),
+                    'port' => config('mail.mailers.smtp.port'),
+                    'user' => config('mail.mailers.smtp.username'),
+                ]);
+                $this->resultMessage = 'Room found but email could not be sent. Please contact support.';
+            }
+        } else {
+            $this->resultMessage = 'Sorry, no rooms are available for this time slot. Please try another time.';
+        }
+
         $this->step = 'result';
     }
 

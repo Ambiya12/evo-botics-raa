@@ -9,6 +9,7 @@ class KioskManager extends Component
     public $step = 'welcome'; // welcome, validating, result, guide
     public $scanData = '';
     public $resultStatus = '';
+    public $reservation = [];
 
     public function goToStep($stepName)
     {
@@ -28,9 +29,26 @@ class KioskManager extends Component
         $this->scanData = $data;
         $this->step = 'validating';
 
-        // Logique de validation (API, DB, etc.)
-        sleep(2); // Simulation
+        $decoded = json_decode($data, true);
 
+        if (!$decoded || !isset($decoded['payload']) || !isset($decoded['signature'])) {
+            $this->resultStatus = 'error';
+            $this->goToStep('result');
+            return;
+        }
+
+        $payload = $decoded['payload'];
+        $signature = $decoded['signature'];
+        $secret = config('app.key');
+        $expected = hash_hmac('sha256', $payload, $secret);
+
+        if (!hash_equals($expected, $signature)) {
+            $this->resultStatus = 'error';
+            $this->goToStep('result');
+            return;
+        }
+
+        $this->reservation = json_decode($payload, true) ?? [];
         $this->resultStatus = 'success';
         $this->goToStep('result');
     }
