@@ -18,7 +18,7 @@ Route::get('/', function () {
 
 Route::get('/kiosk', KioskManager::class);
 
-Route::get('/reservation', Reservation::class);
+Route::get('/reservation', Reservation::class)->middleware(['auth', 'verified'])->name('reservation');
 
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');

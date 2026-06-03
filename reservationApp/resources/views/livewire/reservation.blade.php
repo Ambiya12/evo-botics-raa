@@ -1,17 +1,59 @@
 <div class="min-h-full">
-    <nav class="bg-gray-800">
+    <nav class="bg-white border-b border-gray-100">
         <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            <div class="flex h-16 items-center justify-between">
-                <div class="text-2xl font-bold text-white">
-                    EVO<span class="text-blue-500">BOTICS</span>
+            <div class="flex h-16 justify-between">
+                <div class="flex">
+                    <div class="flex shrink-0 items-center">
+                        <a href="{{ route('dashboard') }}" class="block text-2xl font-bold tracking-tight text-gray-800">
+	                        EVO<span class="text-blue-500">BOTICS</span>
+                        </a>
+                    </div>
                 </div>
+                @auth
+                    <div class="hidden sm:ms-6 sm:flex sm:items-center">
+                        <div class="relative ms-3" x-data="{ open: false }">
+                            <span class="inline-flex rounded-md">
+                                <button @click="open = !open" type="button"
+                                        class="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none">
+                                    {{ auth()->user()->name }}
+                                    <svg class="-me-0.5 ms-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                    </svg>
+                                </button>
+                            </span>
+                            <div x-show="open" @click.away="open = false"
+                                 class="absolute right-0 z-50 mt-2 w-48 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 py-1">
+                                <a href="{{ route('profile.edit') }}"
+                                   class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Profile</a>
+                                <form method="POST" action="{{ route('logout') }}">
+                                    @csrf
+                                    <button type="submit" class="w-full text-left block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Log Out</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                @else
+                    <div class="hidden sm:flex sm:items-center">
+                        <a href="{{ route('login') }}"
+                           class="inline-flex items-center px-1 pt-1 text-sm font-medium leading-5 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none">
+                            Log in
+                        </a>
+                    </div>
+                @endauth
             </div>
         </div>
     </nav>
 
     <header class="relative bg-white shadow-sm">
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-            <h1 class="text-3xl font-bold tracking-tight text-gray-900">EvoBotics booking platform</h1>
+            <div class="flex items-center gap-4">
+                <a href="{{ route('dashboard') }}" class="text-gray-400 hover:text-gray-600 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                    </svg>
+                </a>
+                <h1 class="text-3xl font-bold tracking-tight text-gray-900">Booking platform</h1>
+            </div>
         </div>
     </header>
 
@@ -131,7 +173,7 @@
 
                 <div class="lg:col-span-2">
                     <h2 class="mb-4 text-xl font-bold">1. Pick a date</h2>
-                    <div class="rounded-lg bg-white p-6 shadow ring-1 ring-gray-200">
+                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <div class="mb-4 flex items-center justify-between">
                             <button @click="prevMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&larr;</button>
                             <span class="text-lg font-semibold capitalize" x-text="monthName + ' ' + year"></span>
@@ -163,14 +205,14 @@
                         </div>
                     </div>
 
-                    <div class="mt-6 rounded-lg bg-white p-6 shadow ring-1 ring-gray-200">
+                    <div class="mt-6 overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <h2 class="mb-4 text-xl font-bold">2. Pick a time</h2>
                         <p class="mb-3 text-gray-600" x-show="localStartTime && localEndTime" x-text="localStartTime + ' — ' + localEndTime"></p>
                         <p class="mb-3 text-gray-600" x-show="!localDate">Please select a date first.</p>
                         <button @click="showTimePicker = true"
                                 :disabled="!localDate"
                                 :class="localDate ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
-                                class="rounded-lg px-6 py-3 text-white transition">
+                                class="rounded-md px-6 py-3 text-white transition">
                             Choose a time slot
                         </button>
                     </div>
@@ -219,27 +261,27 @@
                 </div>
 
                 <div class="space-y-6">
-                    <div class="rounded-lg bg-white p-6 shadow ring-1 ring-gray-200">
+                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <h2 class="mb-4 text-xl font-bold">Your information</h2>
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">Name</label>
                                 <input type="text" x-model="localName" @input="syncName(); nameError = ''"
-                                       class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                        :class="nameError ? 'border-red-500' : ''">
                                 <p x-show="nameError" x-text="nameError" class="mt-1 text-sm text-red-600"></p>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium text-gray-700">Email</label>
                                 <input type="email" x-model="localEmail" @input="syncEmail(); emailError = ''"
-                                       class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                        :class="emailError ? 'border-red-500' : ''">
                                 <p x-show="emailError" x-text="emailError" class="mt-1 text-sm text-red-600"></p>
                             </div>
                         </div>
                     </div>
 
-                    <div class="rounded-lg bg-white p-6 shadow ring-1 ring-gray-200">
+                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <h2 class="mb-4 text-xl font-bold">Summary</h2>
                         <div class="space-y-3">
                             <div>
@@ -265,17 +307,17 @@
                         </div>
                     </div>
 
-                    <div class="rounded-lg bg-white p-6 shadow ring-1 ring-gray-200">
+                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <h2 class="mb-4 text-xl font-bold">Number of guests (max 30)</h2>
                         <input type="number" x-model="localPeople" @input="updatePeople(localPeople)"
                                min="1" max="30"
-                               class="block w-full rounded-lg border border-gray-300 px-3 py-3 text-lg shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+                               class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                     </div>
 
                     <button @click="book()"
                             :disabled="!localName || !localEmail || !localDate || !localStartTime || !localEndTime"
-                            :class="localName && localEmail && localDate && localStartTime && localEndTime ? 'bg-green-600 hover:bg-green-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
-                            class="w-full rounded-lg px-4 py-4 text-xl font-bold text-white transition">
+                            :class="localName && localEmail && localDate && localStartTime && localEndTime ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
+                            class="w-full rounded-md px-4 py-4 text-xl font-bold text-white transition">
                         Book now
                     </button>
                 </div>
@@ -311,7 +353,7 @@
                 <p class="mt-2 max-w-md text-center text-gray-600">{{ $resultMessage }}</p>
 
                 <button wire:click="resetForm"
-                        class="mt-8 rounded-lg bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
+                        class="mt-8 rounded-md bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
                     Make another reservation
                 </button>
             </div>
