@@ -4,8 +4,18 @@ use App\Http\Controllers\ProfileController;
 use App\Livewire\KioskManager;
 use App\Livewire\Reservation;
 use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+
+Route::post('/locale', function (Request $request) {
+    $validated = $request->validate([
+        'locale' => 'required|in:en,fr,id,zh',
+    ]);
+    session(['locale' => $validated['locale']]);
+    app()->setLocale($validated['locale']);
+    return redirect()->back();
+})->name('locale.switch');
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [

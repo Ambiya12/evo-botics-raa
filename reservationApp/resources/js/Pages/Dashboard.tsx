@@ -4,6 +4,7 @@ import Modal from '@/Components/Modal';
 import PrimaryButton from '@/Components/PrimaryButton';
 import SecondaryButton from '@/Components/SecondaryButton';
 import { Head } from '@inertiajs/react';
+import { useTranslation } from '@/hooks/useTranslation';
 
 /*
 TODO: Replace mock data with BDD
@@ -27,6 +28,7 @@ TODO: Replace mock data with BDD
 */
 
 export default function Dashboard() {
+    const { t } = useTranslation();
     const [reservations, setReservations] = useState([
         { id: 1, date: '07/13/26', heure_debut: '10:00', heure_fin: '15:00', status: 'confirmed' },
         { id: 2, date: '07/14/26', heure_debut: '14:00', heure_fin: '17:00', status: 'pending' },
@@ -45,15 +47,15 @@ export default function Dashboard() {
             header={
                 <div className="flex w-full items-center justify-between">
                     <h2 className="text-xl font-semibold leading-tight text-gray-800">
-                        Dashboard
+                        {t('Dashboard')}
                     </h2>
                     <a href="/reservation" className="rounded-lg bg-gray-200 px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-300">
-                        Book a meeting room
+                        {t('Book a meeting room')}
                     </a>
                 </div>
             }
         >
-            <Head title="Dashboard" />
+            <Head title={t('Dashboard')} />
 
             {reservations.map((item) => (
                 <div key={item.id} className="py-3">
@@ -87,9 +89,9 @@ export default function Dashboard() {
                                                         ? 'bg-red-100 text-red-700'
                                                         : 'bg-gray-100 text-gray-500'
                                                 }`}>
-                                                    {item.status === 'confirmed' ? 'Confirmed' :
-                                                     item.status === 'pending' ? 'Pending' :
-                                                     item.status === 'cancelled' ? 'Cancelled' : 'Expired'}
+                                                    {t(item.status === 'confirmed' ? 'Confirmed' :
+                                                       item.status === 'pending' ? 'Pending' :
+                                                       item.status === 'cancelled' ? 'Cancelled' : 'Expired')}
                                                 </span>
                                             </div>
                                             <p className="mt-0.5 text-sm text-gray-500">
@@ -102,7 +104,7 @@ export default function Dashboard() {
                                     </div>
                                     {(item.status === 'confirmed' || item.status === 'pending') && (
                                         <PrimaryButton disabled={false} onClick={() => setConfirmCancelId(item.id)}>
-                                            Cancel
+                                            {t('Cancel')}
                                         </PrimaryButton>
                                     )}
                                 </div>
@@ -115,20 +117,20 @@ export default function Dashboard() {
             <Modal show={confirmCancelId !== null} onClose={() => setConfirmCancelId(null)}>
                 <div className="p-6">
                     <h2 className="text-lg font-medium text-gray-900">
-                        Cancel this booking?
+                        {t('Cancel this booking?')}
                     </h2>
                     <p className="mt-1 text-sm text-gray-600">
-                        This action cannot be undone.
+                        {t('This action cannot be undone.')}
                     </p>
                     <div className="mt-6 flex justify-end gap-3">
                         <SecondaryButton onClick={() => setConfirmCancelId(null)}>
-                            No
+                            {t('No')}
                         </SecondaryButton>
                         <PrimaryButton
                             disabled={false}
                             onClick={() => confirmCancelId !== null && cancelReservation(confirmCancelId)}
                         >
-                            Yes, cancel
+                            {t('Yes, cancel')}
                         </PrimaryButton>
                     </div>
                 </div>

@@ -37,7 +37,7 @@ class Reservation extends Component
         $endHour = (int) explode(':', $this->selectedEndTime)[0];
 
         if ($startHour >= $endHour) {
-            $this->addError('selectedEndTime', 'The end time must be after the start time.');
+            $this->addError('selectedEndTime', __('The end time must be after the start time.'));
             return;
         }
 
@@ -50,7 +50,7 @@ class Reservation extends Component
 
         if ($this->roomFound) {
             if (empty($this->email)) {
-                $this->resultMessage = 'No email address provided.';
+                $this->resultMessage = __('No email address provided.');
                 $this->step = 'result';
                 return;
             }
@@ -64,7 +64,7 @@ class Reservation extends Component
                     endTime: $this->selectedEndTime,
                     people: $this->peopleCount,
                 ));
-                $this->resultMessage = 'A room has been found for your reservation! You will receive your confirmation email.';
+                $this->resultMessage = __('A room has been found for your reservation! You will receive your confirmation email.');
             } catch (\Throwable $e) {
                 Log::error('Mail send failed: ' . $e->getMessage(), [
                     'email' => $this->email,
@@ -72,10 +72,10 @@ class Reservation extends Component
                     'port' => config('mail.mailers.smtp.port'),
                     'user' => config('mail.mailers.smtp.username'),
                 ]);
-                $this->resultMessage = 'Room found but email could not be sent. Please contact support.';
+                $this->resultMessage = __('Room found but email could not be sent. Please contact support.');
             }
         } else {
-            $this->resultMessage = 'Sorry, no rooms are available for this time slot. Please try another time.';
+            $this->resultMessage = __('Sorry, no rooms are available for this time slot. Please try another time.');
         }
 
         $this->step = 'result';

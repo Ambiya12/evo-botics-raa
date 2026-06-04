@@ -34,6 +34,18 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'locale' => app()->getLocale(),
+            'translations' => fn () => [
+                app()->getLocale() => $this->loadTranslations(app()->getLocale()),
+            ],
         ];
+    }
+
+    private function loadTranslations(string $locale): array
+    {
+        $path = lang_path("{$locale}.json");
+        return file_exists($path)
+            ? json_decode(file_get_contents($path), true) ?? []
+            : [];
     }
 }
