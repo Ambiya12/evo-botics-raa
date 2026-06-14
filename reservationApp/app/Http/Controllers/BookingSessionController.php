@@ -65,6 +65,7 @@ class BookingSessionController extends Controller
 
     private function createReservation(BookingSession $session, Request $request) {
         $reservation = Reservation::create([
+            'user_id' => auth()->id(),
             'customer_name' => $request->customer_name,
             'customer_email' => $request->customer_email,
             'status' => 'pending',

@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Reservation;
 use App\Models\ActivityLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ReservationController extends Controller
 {
-    public function validateQRCode(Request $request) {
+    public function validateQRCode(Request $request)
+    {
         $request->validate([
             'uuid' => 'required|uuid|exists:reservations,uuid',
         ]);
@@ -56,6 +58,34 @@ class ReservationController extends Controller
             'message' => "La réservation a été validée avec succès.",
             'data' => $reservation
         ], 200);
+    }
+
+    public function myReservations()
+    {
+        return auth()->user()->reservations()->with('bookingSession.room')->get();
+    }
+
+    public function cancel($uuid)
+    {
+        $reservation = auth()->user()->reservations()->where('uuid', $uuid)->firstOrFail();
+        
+        return DB::transaction(function () use ($reservation) {
+            $reservation->bookingSession->update(['is_available' => true]);
+
+            ActivityLog::create([
+                'event_type' => 'reservation_cancelled',
+                'description' => "Réservation annulée par l'utilisateur pour la salle {$reservation->bookingSession->room->name}",
+                'payload' => [
+                    'user_id' => auth()->id(),
+                    'customer_name' => $reservation->customer_name,
+                    'uuid' => $reservation->uuid
+                ]
+            ]);
+            
+            $reservation->delete();
+
+            return response()->json(['message' => 'Réservation annulée avec succès.']);
+        });
     }
 }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\BookingSession;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -19,6 +20,7 @@ class Reservation extends Model
         'attendee_count',
         'validated_at',
         'booking_session_id',
+        'user_id',
     ];
 
     protected $casts = [
@@ -28,7 +30,12 @@ class Reservation extends Model
 
     public function bookingSession(): BelongsTo
     {
-        return $this->belongsTo(BookingSession::class);
+        return $this->belongsTo(BookingSession::class, 'booking_session_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     protected static function booted()

@@ -23,6 +23,7 @@ class BookingSessionFactory extends Factory
             'start_at' => $this->faker->randomElement(['09:00', '10:00', '14:00', '15:00']),
             'end_at' => fn (array $attributes) => 
                 date('H:i', strtotime($attributes['start_at'] . ' +1 hour')),
+            'room_id' => Room::factory(),
         ];
     }
 }

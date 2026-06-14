@@ -3,6 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\Reservation;
+use App\Models\User;
+use App\Models\BookingSession;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -29,6 +31,8 @@ class ReservationFactory extends Factory
             'validated_at' => function (array $attributes) {
                 return $attributes['status'] === 'validated' ? now() : null;
             },
+            'user_id' => User::factory(), 
+            'booking_session_id' => BookingSession::factory(),
         ];
     }
 }

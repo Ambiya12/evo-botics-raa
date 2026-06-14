@@ -19,14 +19,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
-
-        /*User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);*/
-
-        Reservation::factory(10)->create();
+        $users = User::factory(10)->create();
 
         Room::factory(10)->create();
 
@@ -35,6 +28,15 @@ class DatabaseSeeder extends Seeder
         foreach ($rooms as $room) {
             BookingSession::factory(10)->create([
                 'room_id' => $room->id,
+            ]);
+        }
+        
+        $sessions = BookingSession::all();
+
+        for ($i = 0; $i < 10; $i++) {
+            Reservation::factory()->create([
+                'user_id' => $users->random()->id,
+                'booking_session_id' => $sessions->random()->id,
             ]);
         }
 
