@@ -1,0 +1,5 @@
+{
+    "require": {
+        "f9webltd/simple-qrcode": "^5.0"
+    }
+}
