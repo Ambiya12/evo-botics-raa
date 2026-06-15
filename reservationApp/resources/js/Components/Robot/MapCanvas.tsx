@@ -5,7 +5,7 @@ type Props = {
     map: OccupancyGrid | null;
     path: NavPath | null;
     pose: RobotPose | null;
-    onGoal: (x: number, y: number) => void;
+    onGoal?: (x: number, y: number) => void;
 };
 
 type Viewport = {
@@ -173,7 +173,7 @@ export default function MapCanvas({ map, onGoal, path, pose }: Props) {
     };
 
     const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-        if (!map || !viewportRef.current || !canvasRef.current) return;
+        if (!onGoal || !map || !viewportRef.current || !canvasRef.current) return;
 
         const rect = canvasRef.current.getBoundingClientRect();
         const viewport = viewportRef.current;
@@ -198,7 +198,7 @@ export default function MapCanvas({ map, onGoal, path, pose }: Props) {
             <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
                 <div>
                     <h3 className="text-sm font-semibold text-gray-900">Map & Navigation</h3>
-                    <p className="text-xs text-gray-500">Click the map to send a Nav2 goal</p>
+                    <p className="text-xs text-gray-500">{onGoal ? 'Click the map to send a Nav2 goal' : 'Live map (read-only)'}</p>
                 </div>
                 {selectedPoint && (
                     <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -207,7 +207,7 @@ export default function MapCanvas({ map, onGoal, path, pose }: Props) {
                 )}
             </div>
             <div className="h-[520px] min-h-[360px] bg-gray-950" ref={wrapperRef}>
-                <canvas className="block cursor-crosshair" onClick={handleClick} ref={canvasRef} />
+                <canvas className={onGoal ? 'block cursor-crosshair' : 'block'} onClick={handleClick} ref={canvasRef} />
             </div>
         </section>
     );
