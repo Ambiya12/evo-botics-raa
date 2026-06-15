@@ -55,6 +55,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     {t('Dashboard')}
                                 </NavLink>
+                                <NavLink
+                                    href={route('admin.robot')}
+                                    active={route().current('admin.robot')}
+                                >
+                                    {t('Robot Admin')}
+                                </NavLink>
                             </div>
                         </div>
 
@@ -180,6 +186,12 @@ export default function AuthenticatedLayout({ header, children }) {
                             active={route().current('dashboard')}
                         >
                             {t('Dashboard')}
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            href={route('admin.robot')}
+                            active={route().current('admin.robot')}
+                        >
+                            {t('Robot Admin')}
                         </ResponsiveNavLink>
                     </div>
 
