@@ -34,9 +34,14 @@ Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::get('/admin/robot', function () {
-    return Inertia::render('Admin/RobotDashboard');
-})->middleware(['auth', 'verified'])->name('admin.robot');
+Route::middleware(['auth', 'verified'])->prefix('admin/robot')->name('admin.robot.')->group(function () {
+    Route::get('/', fn () => Inertia::render('Admin/Robot/Overview'))->name('overview');
+    Route::get('/navigation', fn () => Inertia::render('Admin/Robot/Navigation'))->name('navigation');
+    Route::get('/teleop', fn () => Inertia::render('Admin/Robot/Teleop'))->name('teleop');
+    Route::get('/arm', fn () => Inertia::render('Admin/Robot/Arm'))->name('arm');
+    Route::get('/diagnostics', fn () => Inertia::render('Admin/Robot/Diagnostics'))->name('diagnostics');
+    Route::get('/connection', fn () => Inertia::render('Admin/Robot/Connection'))->name('connection');
+});
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
