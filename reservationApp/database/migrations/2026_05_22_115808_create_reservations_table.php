@@ -18,11 +18,14 @@ return new class extends Migration
             $table->string('customer_name');
             $table->string('customer_email');
             
-            $table->dateTime('reservation_date');
-            
             $table->string('status')->default('pending'); // Status can be 'pending', 'validated', 'cancelled' or expired
+            $table->integer('attendee_count');
             
             $table->timestamp('validated_at')->nullable();
+
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('booking_session_id')->constrained()->onDelete('cascade');
+
             $table->timestamps();
         });
     }

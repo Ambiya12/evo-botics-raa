@@ -79,16 +79,16 @@ Scénario nominal :
 #### 4. Architecture technique
 
 ```markdown
-[ VISITEUR ]                          [ ADMIN ]
-      |                                     |
-      v                                     v
-+-----+----------+                   +------+-------+
-|  Ecran Tactile |                   | Interface    |
-+-----+----------+                   | Web (React)  |
-      |                              +------+-------+
-      |                                     |
-      | (Input UI / Audio)                  | (WebSocket)
-      v                                     v
+[ VISITEUR ] [ ADMIN ]
+| |
+v v
++-----+----------+ +------+-------+
+| Ecran Tactile | | Interface |
++-----+----------+ | Web (React) |
+| +------+-------+
+| |
+| (Input UI / Audio) | (WebSocket)
+v v
 +-------------+-----------------------------+-------------------------+
 |                  JETSON ORIN NX (ROS2 HUMBLE)                       |
 |                                                                     |

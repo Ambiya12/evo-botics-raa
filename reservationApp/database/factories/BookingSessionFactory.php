@@ -2,14 +2,14 @@
 
 namespace Database\Factories;
 
-use App\Models\Session;
+use App\Models\BookingSession;
 use App\Models\Room;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends Factory<Session>
+ * @extends Factory<BookingSession>
  */
-class SessionFactory extends Factory
+class BookingSessionFactory extends Factory
 {
     /**
      * Define the model's default state.
@@ -23,6 +23,7 @@ class SessionFactory extends Factory
             'start_at' => $this->faker->randomElement(['09:00', '10:00', '14:00', '15:00']),
             'end_at' => fn (array $attributes) => 
                 date('H:i', strtotime($attributes['start_at'] . ' +1 hour')),
+            'room_id' => Room::factory(),
         ];
     }
 }
