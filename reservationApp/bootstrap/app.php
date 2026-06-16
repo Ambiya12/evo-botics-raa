@@ -1,9 +1,13 @@
 <?php
 
+use App\Http\Middleware\EnsureUserIsAdmin;
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 
 $app = Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -14,9 +18,12 @@ $app = Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
-            \App\Http\Middleware\SetLocale::class,
-            \App\Http\Middleware\HandleInertiaRequests::class,
-            \Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets::class,
+            SetLocale::class,
+            HandleInertiaRequests::class,
+            AddLinkHeadersForPreloadedAssets::class,
+        ]);
+        $middleware->alias([
+            'admin' => EnsureUserIsAdmin::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -27,12 +34,16 @@ $app->afterBootstrapping(
     LoadEnvironmentVariables::class,
     function ($app) {
         $envFile = $app->environmentPath().'/'.$app->environmentFile();
-        if (!file_exists($envFile)) return;
+        if (! file_exists($envFile)) {
+            return;
+        }
 
         $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         foreach ($lines as $line) {
             $line = trim($line);
-            if (str_starts_with($line, '#') || !str_contains($line, '=')) continue;
+            if (str_starts_with($line, '#') || ! str_contains($line, '=')) {
+                continue;
+            }
 
             $parts = explode('=', $line, 2);
             $key = $parts[0];
