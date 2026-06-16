@@ -3,7 +3,7 @@
 namespace Tests\Unit;
 
 use App\Enums\UserRole;
-use Tests\TestCase;
+use PHPUnit\Framework\TestCase;
 
 class UserRoleTest extends TestCase
 {
