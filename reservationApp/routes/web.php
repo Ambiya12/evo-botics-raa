@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\BookingSessionController;
 use App\Livewire\KioskManager;
 use App\Livewire\Reservation;
 use Illuminate\Foundation\Application;
@@ -32,9 +34,17 @@ Route::get('/kiosk', KioskManager::class);
 
 Route::get('/reservation', Reservation::class)->middleware(['auth', 'verified'])->name('reservation');
 
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified', 'not-admin'])->name('dashboard');
+Route::middleware(['auth', 'verified', 'not-admin'])->group(function () {
+    Route::get('/dashboard', function () {
+        return Inertia::render('Dashboard', [
+            'reservations' => auth()->user()->reservations()->with('bookingSession.room')->get(),
+        ]);
+        Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+        Route::post('/sessions/book', [BookingSessionController::class, 'bookSession']);
+    })->name('dashboard');
+
+    Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+});
 
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::prefix('robot')->name('robot.')->group(function () {
