@@ -58,20 +58,20 @@ export default function AuthenticatedLayout({ header, children }) {
                                     {t('Dashboard')}
                                 </NavLink>
                                 {isAdmin && (
-                                    <NavLink
-                                        href={route('admin.robot.overview')}
-                                        active={route().current('admin.robot.*')}
-                                    >
-                                        {t('Robot Admin')}
-                                    </NavLink>
-                                )}
-                                {isAdmin && (
-                                    <NavLink
-                                        href={route('admin.users.index')}
-                                        active={route().current('admin.users.*')}
-                                    >
-                                        {t('Users')}
-                                    </NavLink>
+                                    <>
+                                        <NavLink
+                                            href={route('admin.robot.overview')}
+                                            active={route().current('admin.robot.*')}
+                                        >
+                                            {t('Robot Admin')}
+                                        </NavLink>
+                                        <NavLink
+                                            href={route('admin.users.index')}
+                                            active={route().current('admin.users.*')}
+                                        >
+                                            {t('Users')}
+                                        </NavLink>
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -200,20 +200,20 @@ export default function AuthenticatedLayout({ header, children }) {
                             {t('Dashboard')}
                         </ResponsiveNavLink>
                         {isAdmin && (
-                            <ResponsiveNavLink
-                                href={route('admin.robot.overview')}
-                                active={route().current('admin.robot.*')}
-                            >
-                                {t('Robot Admin')}
-                            </ResponsiveNavLink>
-                        )}
-                        {isAdmin && (
-                            <ResponsiveNavLink
-                                href={route('admin.users.index')}
-                                active={route().current('admin.users.*')}
-                            >
-                                {t('Users')}
-                            </ResponsiveNavLink>
+                            <>
+                                <ResponsiveNavLink
+                                    href={route('admin.robot.overview')}
+                                    active={route().current('admin.robot.*')}
+                                >
+                                    {t('Robot Admin')}
+                                </ResponsiveNavLink>
+                                <ResponsiveNavLink
+                                    href={route('admin.users.index')}
+                                    active={route().current('admin.users.*')}
+                                >
+                                    {t('Users')}
+                                </ResponsiveNavLink>
+                            </>
                         )}
                     </div>
 
