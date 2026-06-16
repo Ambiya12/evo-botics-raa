@@ -32,10 +32,9 @@ export default function Index() {
             { role: pending.nextRole },
             {
                 preserveScroll: true,
-                onFinish: () => {
-                    setProcessing(false);
-                    setPending(null);
-                },
+                // Close the modal only on success; on error keep it open so the failure is visible.
+                onSuccess: () => setPending(null),
+                onFinish: () => setProcessing(false),
             },
         );
     };
