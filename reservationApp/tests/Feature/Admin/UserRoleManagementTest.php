@@ -74,4 +74,18 @@ class UserRoleManagementTest extends TestCase
         $this->actingAs($a)->patch("/admin/users/{$a->id}/role", ['role' => 'user'])->assertStatus(403);
         $this->assertSame(1, User::where('role', 'admin')->count());
     }
+
+    public function test_no_op_role_change_writes_no_log_and_no_success_flash(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $target = User::factory()->admin()->create();
+
+        $this->actingAs($admin)
+            ->patch("/admin/users/{$target->id}/role", ['role' => 'admin'])
+            ->assertRedirect()
+            ->assertSessionMissing('success');
+
+        $this->assertSame(0, ActivityLog::count());
+        $this->assertSame(UserRole::Admin, $target->fresh()->role);
+    }
 }

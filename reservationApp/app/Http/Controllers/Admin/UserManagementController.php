@@ -46,7 +46,7 @@ class UserManagementController extends Controller
 
         $newRole = UserRole::from($validated['role']);
 
-        DB::transaction(function () use ($request, $user, $newRole) {
+        $changed = DB::transaction(function () use ($request, $user, $newRole) {
             $oldRole = $user->role;
 
             if ($oldRole === UserRole::Admin && $newRole === UserRole::User) {
@@ -60,7 +60,7 @@ class UserManagementController extends Controller
             }
 
             if ($oldRole === $newRole) {
-                return; // no-op, no log
+                return false; // no-op, no log
             }
 
             $user->role = $newRole;
@@ -78,7 +78,13 @@ class UserManagementController extends Controller
                     'new_role' => $newRole->value,
                 ],
             ]);
+
+            return true;
         });
+
+        if (! $changed) {
+            return back();
+        }
 
         $label = $newRole === UserRole::Admin ? 'promu administrateur' : 'rétrogradé en utilisateur';
 
