@@ -1,0 +1,104 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+  - Class: rviz_common/Views
+    Name: Views
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Value: true
+      Cell Size: 0.5
+
+    - Class: rviz_default_plugins/RobotModel
+      Name: RobotModel
+      Value: true
+      Description Topic:
+        Value: /robot_description
+
+    - Class: rviz_default_plugins/TF
+      Name: TF
+      Value: true
+      Show Axes: true
+      Show Names: true
+      Frame Timeout: 15
+
+    - Class: rviz_default_plugins/LaserScan
+      Name: MergedScan
+      Value: true
+      Topic:
+        Value: /scan_multi
+      Size (m): 0.03
+      Color Transformer: FlatColor
+      Color: 0; 255; 200
+
+    - Class: rviz_default_plugins/Map
+      Name: Map
+      Value: true
+      Topic:
+        Value: /map
+      Color Scheme: map
+
+    - Class: rviz_default_plugins/Map
+      Name: LocalCostmap
+      Value: true
+      Topic:
+        Value: /local_costmap/costmap
+      Color Scheme: costmap
+      Alpha: 0.4
+
+    - Class: rviz_default_plugins/Map
+      Name: GlobalCostmap
+      Value: false
+      Topic:
+        Value: /global_costmap/costmap
+      Color Scheme: costmap
+      Alpha: 0.3
+
+    - Class: rviz_default_plugins/Path
+      Name: GlobalPlan
+      Value: true
+      Topic:
+        Value: /plan
+      Color: 0; 180; 255
+      Line Style: Billboards
+      Width: 0.03
+
+    - Class: rviz_default_plugins/Path
+      Name: LocalPlan
+      Value: true
+      Topic:
+        Value: /local_plan
+      Color: 255; 255; 0
+      Line Style: Billboards
+      Width: 0.02
+
+    - Class: rviz_default_plugins/MarkerArray
+      Name: ExplorationFrontiers
+      Value: true
+      Topic:
+        Value: /explore/frontiers
+
+  Global Options:
+    Fixed Frame: map
+    Frame Rate: 30
+  Tools:
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Value: /goal_pose
+    - Class: rviz_default_plugins/Measure
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 4.0
+      Pitch: 0.7
+      Yaw: 0.8
+      Focal Point:
+        X: 0
+        Y: 0
+        Z: 0
