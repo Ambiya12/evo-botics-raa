@@ -59,7 +59,7 @@
   "I will drive you to your room": "I will drive you to your room",
   "The end time must be after the start time.": "The end time must be after the start time.",
   "No email address provided.": "No email address provided.",
-  "A room has been found for your reservation! You will receive your confirmation email.": "A room has been found for your reservation! You will receive your confirmation email.",
+  "A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)": "A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)",
   "Room found but email could not be sent. Please contact support.": "Room found but email could not be sent. Please contact support.",
   "Sorry, no rooms are available for this time slot. Please try another time.": "Sorry, no rooms are available for this time slot. Please try another time.",
   "Password": "Password",
