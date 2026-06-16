@@ -33,7 +33,7 @@ export default function ManualControls({ ros }: Props) {
     }, [pressed, speed, turnSpeed]);
 
     const sendTwist = (linearX: number, angularZ: number) => {
-        ros.publish('/cmd_vel', 'geometry_msgs/msg/Twist', {
+        ros.publish('/cmd_vel_teleop', 'geometry_msgs/msg/Twist', {
             linear: { x: linearX, y: 0, z: 0 },
             angular: { x: 0, y: 0, z: angularZ },
         });
@@ -47,7 +47,7 @@ export default function ManualControls({ ros }: Props) {
         }
 
         const timer = window.setInterval(() => {
-            ros.publish('/cmd_vel', 'geometry_msgs/msg/Twist', twist);
+            ros.publish('/cmd_vel_teleop', 'geometry_msgs/msg/Twist', twist);
         }, 120);
 
         return () => window.clearInterval(timer);
@@ -120,7 +120,7 @@ export default function ManualControls({ ros }: Props) {
                 Linear speed {speed.toFixed(2)} m/s
                 <input
                     className="mt-2 w-full accent-blue-600"
-                    max="0.35"
+                    max="0.28"
                     min="0.05"
                     onChange={(event) => setSpeed(Number(event.target.value))}
                     step="0.01"
@@ -132,7 +132,7 @@ export default function ManualControls({ ros }: Props) {
                 Turn speed {turnSpeed.toFixed(2)} rad/s
                 <input
                     className="mt-2 w-full accent-blue-600"
-                    max="1.2"
+                    max="1.0"
                     min="0.2"
                     onChange={(event) => setTurnSpeed(Number(event.target.value))}
                     step="0.05"

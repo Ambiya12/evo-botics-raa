@@ -14,7 +14,7 @@ const quaternionFromYaw = (yaw: number) => ({
 });
 
 export default function RobotActionsPanel({ pose, ros }: Props) {
-    const [speedLimit, setSpeedLimit] = useState(0.22);
+    const [speedLimit, setSpeedLimit] = useState(0.28);
     const [initialPose, setInitialPose] = useState({ x: '0', y: '0', yawDeg: '0' });
 
     const sendInitialPose = () => {
@@ -49,15 +49,25 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
     };
 
     const cancelNavigation = () => {
-        ros.publish('/move_base/cancel', 'action_msgs/msg/GoalInfo', {
-            stamp: { sec: 0, nanosec: 0 },
-            goal_id: { uuid: Array(16).fill(0) },
+        ros.publish('/explore/resume', 'std_msgs/msg/Bool', { data: false });
+        ros.callService('/navigate_to_pose/_action/cancel_goal', {
+            type: 'action_msgs/srv/CancelGoal',
+            args: {
+                goal_info: {
+                    stamp: { sec: 0, nanosec: 0 },
+                    goal_id: { uuid: Array(16).fill(0) },
+                },
+            },
         });
-        ros.publish('/cmd_vel', 'geometry_msgs/msg/Twist', {
+        ros.publish('/cmd_vel_nav', 'geometry_msgs/msg/Twist', {
             linear: { x: 0, y: 0, z: 0 },
             angular: { x: 0, y: 0, z: 0 },
         });
-        ros.addLog('Navigation cancel requested and /cmd_vel stopped.', 'warn');
+        ros.publish('/cmd_vel_teleop', 'geometry_msgs/msg/Twist', {
+            linear: { x: 0, y: 0, z: 0 },
+            angular: { x: 0, y: 0, z: 0 },
+        });
+        ros.addLog('Navigation cancel requested, exploration paused, and velocity inputs stopped.', 'warn');
     };
 
     const sendSpeedLimit = () => {
@@ -143,7 +153,7 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
                     Nav2 speed limit {speedLimit.toFixed(2)} m/s
                     <input
                         className="mt-2 w-full accent-blue-600"
-                        max="0.6"
+                        max="0.28"
                         min="0.05"
                         onChange={(event) => setSpeedLimit(Number(event.target.value))}
                         step="0.01"

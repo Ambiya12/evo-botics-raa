@@ -2,7 +2,7 @@
 
 This is the normal workflow for the Jetson robot.
 
-The `m3pro_teacher_ws` workspace already exists on the Jetson host, so do not deploy it from the Mac every time. Copy the Jetson host workspace into the Docker container, build it there, then launch ROS from Docker.
+The Evo-Botics ROS workspace is now `evo_ws`. It is our first-party workspace and should be deployed from this repository. The teacher workspace under `docs/m3pro_teacher_ws ` is kept only as reference material.
 
 ## Robot Values
 
@@ -10,8 +10,8 @@ The `m3pro_teacher_ws` workspace already exists on the Jetson host, so do not de
 Jetson IP: 10.10.221.115
 Jetson user: jetson
 Docker container: m3pro
-Host workspace: /home/jetson/m3pro_teacher_ws
-Docker workspace: /root/m3pro_teacher_ws
+Host workspace: /home/jetson/evo_ws
+Docker workspace: /root/evo_ws
 ROS_DOMAIN_ID: 30
 ROS bridge: ws://10.10.221.115:9090
 Camera stream: http://10.10.221.115:8080/camera/stream
@@ -24,7 +24,33 @@ If the container name is not `m3pro`, check it on the Jetson:
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 ```
 
-## 1. Copy The Jetson Workspace Into Docker
+## Evo Package Roadmap
+
+Current owned packages:
+
+- `evo_navigation`: SLAM, Nav2, exploration, RViz config, and command safety gate.
+- `evo_web`: rosbridge launch and camera HTTP bridge for `/camera/stream` and `/camera/snapshot`.
+
+Likely future packages:
+
+- `evo_interfaces`: custom messages/actions/services for reservations, guide state, and safety status.
+- `evo_vision`: QR scanning, object detection, and camera obstacle layer.
+- `evo_reception`: visitor flow, reservation validation bridge, and waypoint orchestration.
+- `evo_voice`: STT/TTS/translation pipeline.
+- `evo_bringup`: one-command launch composition once nav, web, vision, and reception are stable.
+- `evo_description`: robot URDF/RViz assets only if we need to own the model instead of relying on Yahboom bringup.
+
+## 1. Deploy The Evo Workspace To The Jetson
+
+Run this from the repository on the Mac:
+
+```bash
+JETSON_IP=10.10.221.115 JETSON_USER=jetson JETSON_WS=/home/jetson/evo_ws ./scripts/deploy.sh
+```
+
+This syncs `evo_ws/src` to the Jetson host and builds the host workspace.
+
+## 2. Copy The Jetson Workspace Into Docker
 
 Run this on the Jetson, not on the Mac:
 
@@ -34,8 +60,8 @@ ssh jetson@10.10.221.115
 
 ```bash
 CONTAINER=m3pro
-HOST_WS=/home/jetson/m3pro_teacher_ws
-DOCKER_WS=/root/m3pro_teacher_ws
+HOST_WS=/home/jetson/evo_ws
+DOCKER_WS=/root/evo_ws
 
 test -d "$HOST_WS"
 docker exec "$CONTAINER" rm -rf "$DOCKER_WS"
@@ -48,14 +74,14 @@ docker exec -it \
     source /opt/ros/humble/setup.bash
     source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
     source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-    cd /root/m3pro_teacher_ws
+    cd /root/evo_ws
     colcon build --symlink-install
   '
 ```
 
-Use this again only when the Jetson host copy of `m3pro_teacher_ws` changes.
+Use this again whenever `evo_ws/src` changes.
 
-## 2. Open A ROS Shell
+## 3. Open A ROS Shell
 
 Open a new terminal whenever you need to launch a ROS process:
 
@@ -75,7 +101,7 @@ Inside Docker, run:
 source /opt/ros/humble/setup.bash
 source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
 source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash
+source /root/evo_ws/install/setup.bash
 export ROS_DOMAIN_ID=30
 export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ```
@@ -83,10 +109,10 @@ export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 Quick check:
 
 ```bash
-ros2 pkg list | grep m3pro_teacher
+ros2 pkg list | grep -E 'evo_|explore_lite'
 ```
 
-## 3. Start Robot Bringup
+## 4. Start Robot Bringup
 
 Terminal 1, inside Docker:
 
@@ -102,7 +128,7 @@ Check in another ROS shell:
 ros2 topic list -t | grep -E '/scan0|/scan1|/odom|/cmd_vel'
 ```
 
-## 4. Start The Camera Correctly
+## 5. Start The Camera Correctly
 
 The dashboard camera stream depends on a real ROS image topic. If the dashboard says `Camera stream unavailable` and the sensor status shows `RGB camera` or `Depth camera` as waiting, the web server is running but the camera driver is not publishing.
 
@@ -153,12 +179,12 @@ Camera Port: 8080
 Camera Path: /camera/stream
 ```
 
-## 5. Start Rosbridge And The Camera Web Server
+## 6. Start Rosbridge And The Camera Web Server
 
 Terminal 3, inside Docker:
 
 ```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+ros2 launch evo_web web_dashboard.launch.py \
   port:=8080 \
   camera_topic:=/camera/color/image_raw
 ```
@@ -166,7 +192,7 @@ ros2 launch m3pro_teacher_web web_dashboard.launch.py \
 If port `9090` is already used, keep the existing rosbridge and start only the web server:
 
 ```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+ros2 launch evo_web web_dashboard.launch.py \
   rosbridge:=false \
   port:=8080 \
   camera_topic:=/camera/color/image_raw
@@ -179,7 +205,7 @@ ss -ltnp | grep -E ':8080|:9090'
 curl -I http://127.0.0.1:8080/camera/stream
 ```
 
-## 6. Start The Admin Dashboard
+## 7. Start The Admin Dashboard
 
 On the Mac:
 
@@ -211,7 +237,7 @@ Camera Path: /camera/stream
 Save Map Path: /root/maps/admin_map
 ```
 
-## 7. Create A New Map
+## 8. Create A New Map
 
 Use this when you want to drive the robot and build a map.
 
@@ -224,13 +250,13 @@ ros2 launch slam_mapping bringup.launch.py
 Terminal 2:
 
 ```bash
-ros2 launch m3pro_teacher_nav slam_online.launch.py rviz:=false
+ros2 launch evo_navigation slam_online.launch.py rviz:=false
 ```
 
 Terminal 3:
 
 ```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+ros2 launch evo_web web_dashboard.launch.py \
   port:=8080 \
   camera_topic:=/camera/color/image_raw
 ```
@@ -252,7 +278,7 @@ Expected files:
 /root/maps/admin_map.pgm
 ```
 
-## 8. Navigate With A Saved Map
+## 9. Navigate With A Saved Map
 
 Use this when `/root/maps/admin_map.yaml` already exists in Docker.
 
@@ -265,7 +291,7 @@ ros2 launch slam_mapping bringup.launch.py
 Terminal 2:
 
 ```bash
-ros2 launch m3pro_teacher_nav navigation.launch.py \
+ros2 launch evo_navigation navigation.launch.py \
   map:=/root/maps/admin_map.yaml \
   rviz:=false
 ```
@@ -273,14 +299,14 @@ ros2 launch m3pro_teacher_nav navigation.launch.py \
 Terminal 3:
 
 ```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+ros2 launch evo_web web_dashboard.launch.py \
   port:=8080 \
   camera_topic:=/camera/color/image_raw
 ```
 
 Before sending Nav2 goals, set the initial pose in the dashboard so the robot marker matches the real robot.
 
-## 9. Copy An Existing Map Into Docker
+## 10. Copy An Existing Map Into Docker
 
 If the map is on the Jetson host in `~/maps_backup`, copy it into Docker:
 
@@ -297,12 +323,12 @@ docker exec "$CONTAINER" ls -la /root/maps/demo_map.*
 Then launch navigation with:
 
 ```bash
-ros2 launch m3pro_teacher_nav navigation.launch.py \
+ros2 launch evo_navigation navigation.launch.py \
   map:=/root/maps/demo_map.yaml \
   rviz:=false
 ```
 
-## 10. Minimal Debug Checklist
+## 11. Minimal Debug Checklist
 
 Run these inside Docker after sourcing the ROS setup.
 
@@ -345,7 +371,8 @@ ss -ltnp | grep -E ':8080|:9090'
 ## Important Notes
 
 - Keep each ROS launch running in its own terminal.
+- Treat `docs/m3pro_teacher_ws ` as reference material only. Do not launch `m3pro_teacher_*` packages for the Evo-Botics workflow.
 - If you stop the camera launch, `/camera/color/image_raw` disappears and `/camera/stream` has no frames.
 - If the Jetson host sees `/dev/video*` but Docker does not, the container was started without access to the camera device. Restart the robot Docker stack with USB/video device access, then launch the camera again.
 - If rosbridge is already running on `9090`, use `rosbridge:=false` for `web_dashboard.launch.py`.
-- The old Mac-to-Jetson deploy script is only needed when you changed the workspace on the Mac and want to send those changes to the Jetson host.
+- The deploy script syncs `evo_ws/src` from this repository to the Jetson host workspace.

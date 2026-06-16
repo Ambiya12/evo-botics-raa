@@ -1,0 +1,37 @@
+explore_node:
+  ros__parameters:
+    # ---------- frames ----------
+    robot_base_frame: base_footprint
+
+    # ---------- costmap source (global, from SLAM) ----------
+    costmap_topic: /global_costmap/costmap
+    costmap_updates_topic: /global_costmap/costmap_updates
+
+    # ---------- behavior ----------
+    # Re-evaluate frontier choice every 1s. Higher = more responsive when
+    # a Nav2 goal finishes; lower = less CPU burn. 1.0 is a good Jetson balance.
+    planner_frequency: 1.0
+    # Abandon a frontier after this long without progress, pick another.
+    # With a cautious indoor robot and possibly re-planning paths, 35 s avoids
+    # prematurely blacklisting frontiers that are just far away.
+    progress_timeout: 35.0
+    # Return to the starting pose when no more frontiers remain.
+    return_to_init: true
+    visualize: true
+    # Jetson Nano: SLAM can lag the map->odom TF by ~1-2 s under full load.
+    # Without this tolerance, explore_lite hits "Extrapolation Error" and
+    # wrongly concludes "All frontiers traversed" — giving up after one goal.
+    transform_tolerance: 2.5
+
+    # ---------- frontier selection weights ----------
+    # Score(frontier) = gain_scale * size  -  potential_scale * travel_cost  -  orientation_scale * yaw_change.
+    # Keep a bias toward useful frontier size, but avoid chasing large unknown
+    # regions across the room while the map is still incomplete.
+    potential_scale: 2.5
+    gain_scale: 2.0
+    orientation_scale: 0.0  # ignore heading change
+
+    # Ignore noise/tiny frontier clusters (meters), and require the selected
+    # free-space goal beside a frontier to have this obstacle clearance.
+    min_frontier_size: 0.65
+    frontier_goal_clearance: 0.30
