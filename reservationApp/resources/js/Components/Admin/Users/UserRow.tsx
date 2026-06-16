@@ -22,7 +22,7 @@ export default function UserRow({ user, onRequestChange }: UserRowProps) {
     const tooltip = user.isSelf
         ? 'Vous ne pouvez pas modifier votre propre rôle.'
         : user.isLastAdmin
-          ? 'Vous êtes le dernier admin.'
+          ? 'Impossible de rétrograder le dernier administrateur.'
           : undefined;
 
     return (
