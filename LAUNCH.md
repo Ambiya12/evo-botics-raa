@@ -4,6 +4,37 @@ This is the normal workflow for the Jetson robot.
 
 The Evo-Botics ROS workspace is now `evo_ws`. It is our first-party workspace and should be deployed from this repository. The teacher workspace under `docs/m3pro_teacher_ws ` is kept only as reference material.
 
+## Quick Start (recommended)
+
+The scripts in `scripts/robot/` wrap the whole procedure below. Each ROS service runs
+in a **detached tmux session on the Jetson**, so it survives closing your Mac terminals
+(no more keeping 3 terminals open). All commands run from the repo on the Mac.
+
+```bash
+# 1. One-time : set your Jetson IP if it changed (DHCP). Container name is auto-detected.
+./scripts/robot/config.sh        # (sourced by robot.sh ; nothing to run directly)
+./scripts/robot/robot.sh config ip 10.10.221.115
+
+# 2. Deploy + build into Docker (steps 1-2 below)
+./scripts/robot/robot.sh setup
+
+# 3. Start a full stack (choose a profile)
+./scripts/robot/robot.sh start map        # bringup + camera + slam + web  (create a map, §8)
+./scripts/robot/robot.sh start navigate   # bringup + camera + nav  + web  (saved map, §9)
+./scripts/robot/robot.sh start base       # bringup + camera + web
+
+# 4. Inspect / operate
+./scripts/robot/robot.sh status           # tmux sessions + ROS topics + ports
+./scripts/robot/robot.sh logs slam        # attach a service (Ctrl-b d to detach)
+./scripts/robot/robot.sh restart          # services killed after ~6h ? relaunch the last profile
+./scripts/robot/robot.sh stop all
+```
+
+The dashboard side (Laravel) stays as-is: run `composer dev` in `reservationApp/`.
+
+The sections below document the **manual** procedure each script automates — keep them as
+reference for debugging.
+
 ## Robot Values
 
 ```text
