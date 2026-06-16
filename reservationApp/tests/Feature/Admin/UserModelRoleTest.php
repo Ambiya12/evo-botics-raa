@@ -29,6 +29,8 @@ class UserModelRoleTest extends TestCase
 
     public function test_role_is_guarded_against_mass_assignment(): void
     {
+        // Stays 'user' thanks to both legs of the guard: `role` is absent from
+        // $fillable (so create() ignores it) and the migration default is 'user'.
         $user = User::create([
             'name' => 'Mallory',
             'email' => 'mallory@example.com',

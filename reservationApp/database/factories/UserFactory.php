@@ -45,6 +45,9 @@ class UserFactory extends Factory
         ]);
     }
 
+    /**
+     * Indicate that the user should be an administrator.
+     */
     public function admin(): static
     {
         return $this->state(fn (array $attributes) => [
