@@ -22,7 +22,12 @@ class MakeAdminCommandTest extends TestCase
         $user->refresh();
         $this->assertSame(UserRole::Admin, $user->role);
         $this->assertNotNull($user->email_verified_at);
-        $this->assertSame(1, ActivityLog::where('action', 'user.role_promoted')->count());
+        $log = ActivityLog::where('action', 'user.role_promoted')->sole();
+        $this->assertNull($log->payload['actor_id']);
+        $this->assertSame('console', $log->payload['actor_email']);
+        $this->assertSame('user', $log->payload['old_role']);
+        $this->assertSame('admin', $log->payload['new_role']);
+        $this->assertSame($user->id, $log->loggable_id);
     }
 
     public function test_fails_when_email_unknown(): void

@@ -33,7 +33,7 @@ class MakeAdmin extends Command
         $oldRole = $user->role;
         $user->role = UserRole::Admin;
         if (! $user->hasVerifiedEmail()) {
-            $user->markEmailAsVerified();
+            $user->email_verified_at = now();
         }
         $user->save();
 
