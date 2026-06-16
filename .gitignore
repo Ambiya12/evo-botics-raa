@@ -1,5 +1,14 @@
 source/
 
+# Claude Code / outils IA (ne jamais committer)
+CLAUDE.md
+.claude/
+docs/checkpoint/
+docs/superpowers/
+
+# Bridge Python ROS local (non suivi, voir CLAUDE.md)
+reservationApp/bridge/
+
 # ROS2 generated workspace artifacts
 evo_ws/build/
 evo_ws/install/
