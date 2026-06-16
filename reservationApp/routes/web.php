@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProfileController;
 use App\Livewire\KioskManager;
 use App\Livewire\Reservation;
@@ -45,8 +44,7 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
         Route::get('/connection', fn () => Inertia::render('Admin/Robot/Connection'))->name('connection');
     });
 
-    Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
-    Route::patch('users/{user}/role', [UserManagementController::class, 'updateRole'])->name('users.role.update');
+    // admin.users.* routes are registered in the task that introduces UserManagementController.
 });
 
 Route::middleware('auth')->group(function () {
