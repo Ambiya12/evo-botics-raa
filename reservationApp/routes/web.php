@@ -34,7 +34,7 @@ Route::get('/reservation', Reservation::class)->middleware(['auth', 'verified'])
 
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+})->middleware(['auth', 'verified', 'not-admin'])->name('dashboard');
 
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::prefix('robot')->name('robot.')->group(function () {
