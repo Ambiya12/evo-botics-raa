@@ -1,33 +1,207 @@
 # Evo-Botics Robot Launch Guide
 
-This guide gives two complete launch cases for the admin robot dashboard.
+This is the normal workflow for the Jetson robot.
 
-- Case 1: start from zero, create a new map, save it, then use it for navigation.
-- Case 2: start from zero, use an existing map already saved on the Jetson host.
+The `m3pro_teacher_ws` workspace already exists on the Jetson host, so do not deploy it from the Mac every time. Copy the Jetson host workspace into the Docker container, build it there, then launch ROS from Docker.
 
-Robot values used in this guide:
+## Robot Values
 
 ```text
 Jetson IP: 10.10.221.115
 Jetson user: jetson
-Expected Docker container: m3pro
-ROS bridge port: 9090
-Camera web port: 8080
-Laravel app: http://127.0.0.1:8000/admin/robot
+Docker container: m3pro
+Host workspace: /home/jetson/m3pro_teacher_ws
+Docker workspace: /root/m3pro_teacher_ws
+ROS_DOMAIN_ID: 30
+ROS bridge: ws://10.10.221.115:9090
+Camera stream: http://10.10.221.115:8080/camera/stream
+Dashboard: http://127.0.0.1:8000/admin/robot
 ```
 
-If your Docker container is not named `m3pro`, replace `m3pro` in every command with the real name from:
+If the container name is not `m3pro`, check it on the Jetson:
 
 ```bash
-ssh jetson@10.10.221.115
 docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
 ```
 
-Before starting a case, stop old ROS launch terminals if they are already running. Use `Ctrl+C` in each ROS terminal.
+## 1. Copy The Jetson Workspace Into Docker
 
-## Common Dashboard Values
+Run this on the Jetson, not on the Mac:
 
-Use these values in the Laravel admin dashboard:
+```bash
+ssh jetson@10.10.221.115
+```
+
+```bash
+CONTAINER=m3pro
+HOST_WS=/home/jetson/m3pro_teacher_ws
+DOCKER_WS=/root/m3pro_teacher_ws
+
+test -d "$HOST_WS"
+docker exec "$CONTAINER" rm -rf "$DOCKER_WS"
+docker cp "$HOST_WS" "$CONTAINER:$DOCKER_WS"
+docker exec -it \
+  -e ROS_DOMAIN_ID=30 \
+  -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  "$CONTAINER" \
+  bash -lc '
+    source /opt/ros/humble/setup.bash
+    source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
+    source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
+    cd /root/m3pro_teacher_ws
+    colcon build --symlink-install
+  '
+```
+
+Use this again only when the Jetson host copy of `m3pro_teacher_ws` changes.
+
+## 2. Open A ROS Shell
+
+Open a new terminal whenever you need to launch a ROS process:
+
+```bash
+ssh jetson@10.10.221.115
+docker exec -it \
+  -e ROS_DOMAIN_ID=30 \
+  -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  -e DISPLAY=:0 \
+  m3pro \
+  bash
+```
+
+Inside Docker, run:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
+source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
+source /root/m3pro_teacher_ws/install/setup.bash
+export ROS_DOMAIN_ID=30
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+```
+
+Quick check:
+
+```bash
+ros2 pkg list | grep m3pro_teacher
+```
+
+## 3. Start Robot Bringup
+
+Terminal 1, inside Docker:
+
+```bash
+ros2 launch slam_mapping bringup.launch.py
+```
+
+Leave it running. This should provide the base robot, lidar, odometry, TF, arm topics, and `/cmd_vel`.
+
+Check in another ROS shell:
+
+```bash
+ros2 topic list -t | grep -E '/scan0|/scan1|/odom|/cmd_vel'
+```
+
+## 4. Start The Camera Correctly
+
+The dashboard camera stream depends on a real ROS image topic. If the dashboard says `Camera stream unavailable` and the sensor status shows `RGB camera` or `Depth camera` as waiting, the web server is running but the camera driver is not publishing.
+
+First check that Docker can see the camera device:
+
+```bash
+ls -la /dev/video* /dev/bus/usb 2>/dev/null || true
+```
+
+Then check that the Yahboom camera launch file exists:
+
+```bash
+ros2 launch slam_mapping app_camera.launch.py --show-args
+```
+
+If that command prints launch arguments, start the camera in its own Docker terminal:
+
+```bash
+ros2 launch slam_mapping app_camera.launch.py
+```
+
+Leave it running.
+
+Expected camera topics:
+
+```bash
+ros2 topic list -t | grep -E '/camera/(color|depth)'
+ros2 topic hz /camera/color/image_raw
+```
+
+Expected result:
+
+```text
+/camera/color/image_raw [sensor_msgs/msg/Image]
+/camera/depth/image_raw [sensor_msgs/msg/Image]
+```
+
+If `app_camera.launch.py` does not exist, find the actual camera launch installed in the Yahboom workspaces:
+
+```bash
+find /root/yahboomcar_ws /root/M3Pro_ws -path '*launch*' -iname '*camera*.launch.py' 2>/dev/null
+```
+
+Launch the camera file found there, then re-check `/camera/color/image_raw`. Do not change the dashboard camera URL; the dashboard must stay on:
+
+```text
+Camera Port: 8080
+Camera Path: /camera/stream
+```
+
+## 5. Start Rosbridge And The Camera Web Server
+
+Terminal 3, inside Docker:
+
+```bash
+ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+  port:=8080 \
+  camera_topic:=/camera/color/image_raw
+```
+
+If port `9090` is already used, keep the existing rosbridge and start only the web server:
+
+```bash
+ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+  rosbridge:=false \
+  port:=8080 \
+  camera_topic:=/camera/color/image_raw
+```
+
+Check:
+
+```bash
+ss -ltnp | grep -E ':8080|:9090'
+curl -I http://127.0.0.1:8080/camera/stream
+```
+
+## 6. Start The Admin Dashboard
+
+On the Mac:
+
+```bash
+cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+In another Mac terminal:
+
+```bash
+cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
+npm run dev -- --host 127.0.0.1
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/admin/robot
+```
+
+Dashboard values:
 
 ```text
 Robot IP: 10.10.221.115
@@ -37,635 +211,141 @@ Camera Path: /camera/stream
 Save Map Path: /root/maps/admin_map
 ```
 
-## Common ROS Shell Setup
+## 7. Create A New Map
 
-Each time you enter the Docker container, run this setup before ROS commands:
+Use this when you want to drive the robot and build a map.
 
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-```
-
-## Case 1: Create A New Map From The Beginning
-
-Use this case when you do not have a finished map yet, or when you want to create a new map by driving the robot around.
-
-### Terminal 1: Check The Robot And Container
-
-On your Mac:
+Terminal 1:
 
 ```bash
-ssh jetson@10.10.221.115
-```
-
-On the Jetson:
-
-```bash
-docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-```
-
-Check that the container exists:
-
-```bash
-docker exec m3pro ls /root
-```
-
-### Terminal 2: Start Robot Bringup
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ros2 launch slam_mapping bringup.launch.py
 ```
 
-Leave this terminal running.
-
-### Terminal 3: Start SLAM Mapping
-
-Open a new terminal on your Mac:
+Terminal 2:
 
 ```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ros2 launch m3pro_teacher_nav slam_online.launch.py rviz:=false
 ```
 
-Leave this terminal running.
-
-### Terminal 4: Start Camera Topic
-
-Open a new terminal on your Mac:
+Terminal 3:
 
 ```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
+ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+  port:=8080 \
+  camera_topic:=/camera/color/image_raw
 ```
 
-Inside Docker:
+Drive slowly from the dashboard. Watch the map panel while driving.
+
+When the map looks correct, save it inside Docker:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ls -la /dev/video*
-ros2 launch slam_mapping app_camera.launch.py
-```
-
-Leave this terminal running.
-
-If `ls -la /dev/video*` does not show a camera device, the Docker container cannot see the camera. The dashboard cannot fix that; the container must be started with camera device access.
-
-### Terminal 5: Start Rosbridge And Camera Web Server
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 launch m3pro_teacher_web web_dashboard.launch.py port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-Leave this terminal running.
-
-If you get an error because port `9090` is already used, run this instead:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-### Terminal 6: Verify Mapping Topics
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 topic list | grep -Ei 'map|scan|odom|cmd_vel|camera|image|depth|rgb|color'
-```
-
-Check the map topic:
-
-```bash
-ros2 topic echo /map --once
-```
-
-Check the camera topic:
-
-```bash
-ros2 topic hz /camera/color/image_raw
-```
-
-If `/camera/color/image_raw` does not exist, find the real camera topic:
-
-```bash
-ros2 topic list | grep -Ei 'camera|image|depth|rgb|color'
-```
-
-Then restart the web server command with the real topic:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/REAL/CAMERA/TOPIC
-```
-
-### Terminal 7: Open The Admin Dashboard
-
-On your Mac, start Laravel:
-
-```bash
-cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
-php artisan serve --host=127.0.0.1 --port=8000
-```
-
-Leave this terminal running.
-
-Open another terminal on your Mac and start Vite:
-
-```bash
-cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
-npm run dev -- --host 127.0.0.1
-```
-
-Open this URL in your browser:
-
-```text
-http://127.0.0.1:8000/admin/robot
-```
-
-Use the dashboard to drive the robot slowly and build the map. When the map looks good, save it.
-
-### Terminal 8: Save The New Map
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 mkdir -p /root/maps
 ros2 run nav2_map_server map_saver_cli -f /root/maps/admin_map
-ls -la /root/maps
-cat /root/maps/admin_map.yaml
+ls -la /root/maps/admin_map.*
 ```
 
-You should see:
+Expected files:
 
 ```text
 /root/maps/admin_map.yaml
 /root/maps/admin_map.pgm
 ```
 
-### Terminal 9: Restart Into Navigation Mode With The New Map
+## 8. Navigate With A Saved Map
 
-Stop the SLAM terminal with `Ctrl+C`. Keep robot bringup running.
+Use this when `/root/maps/admin_map.yaml` already exists in Docker.
 
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
+Terminal 1:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 launch m3pro_teacher_nav navigation.launch.py map:=/root/maps/admin_map.yaml rviz:=false
-```
-
-Now the dashboard map click should send Nav2 goals to the robot.
-
-## Case 2: Use An Existing Map From The Beginning
-
-Use this case when the map already exists on the Jetson host in:
-
-```text
-~/maps_backup/demo_map.pgm
-~/maps_backup/demo_map.yaml
-```
-
-### Terminal 1: Check Existing Map And Copy It Into Docker
-
-On your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-```
-
-On the Jetson:
-
-```bash
-docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}'
-ls -la ~/maps_backup
-docker exec m3pro mkdir -p /root/maps
-docker cp ~/maps_backup/demo_map.yaml m3pro:/root/maps/demo_map.yaml
-docker cp ~/maps_backup/demo_map.pgm m3pro:/root/maps/demo_map.pgm
-docker exec m3pro sh -lc "cd /root/maps && sed -i 's#^image:.*#image: demo_map.pgm#' demo_map.yaml"
-docker exec m3pro ls -la /root/maps
-docker exec m3pro cat /root/maps/demo_map.yaml
-```
-
-You should see:
-
-```text
-/root/maps/demo_map.yaml
-/root/maps/demo_map.pgm
-```
-
-### Terminal 2: Start Robot Bringup
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ros2 launch slam_mapping bringup.launch.py
 ```
 
-Leave this terminal running.
+Terminal 2:
 
-### Terminal 3: Start Navigation With Existing Map
+```bash
+ros2 launch m3pro_teacher_nav navigation.launch.py \
+  map:=/root/maps/admin_map.yaml \
+  rviz:=false
+```
 
-Open a new terminal on your Mac:
+Terminal 3:
+
+```bash
+ros2 launch m3pro_teacher_web web_dashboard.launch.py \
+  port:=8080 \
+  camera_topic:=/camera/color/image_raw
+```
+
+Before sending Nav2 goals, set the initial pose in the dashboard so the robot marker matches the real robot.
+
+## 9. Copy An Existing Map Into Docker
+
+If the map is on the Jetson host in `~/maps_backup`, copy it into Docker:
 
 ```bash
 ssh jetson@10.10.221.115
-docker exec -it m3pro bash
+CONTAINER=m3pro
+docker exec "$CONTAINER" mkdir -p /root/maps
+docker cp ~/maps_backup/demo_map.yaml "$CONTAINER":/root/maps/demo_map.yaml
+docker cp ~/maps_backup/demo_map.pgm "$CONTAINER":/root/maps/demo_map.pgm
+docker exec "$CONTAINER" sh -lc "cd /root/maps && sed -i 's#^image:.*#image: demo_map.pgm#' demo_map.yaml"
+docker exec "$CONTAINER" ls -la /root/maps/demo_map.*
 ```
 
-Inside Docker:
+Then launch navigation with:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 launch m3pro_teacher_nav navigation.launch.py map:=/root/maps/demo_map.yaml rviz:=false
+ros2 launch m3pro_teacher_nav navigation.launch.py \
+  map:=/root/maps/demo_map.yaml \
+  rviz:=false
 ```
 
-Leave this terminal running.
+## 10. Minimal Debug Checklist
 
-### Terminal 4: Start Camera Topic
+Run these inside Docker after sourcing the ROS setup.
 
-Open a new terminal on your Mac:
+Robot base:
 
 ```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
+ros2 topic list -t | grep -E '/scan0|/scan1|/scan_multi|/odom|/cmd_vel'
+ros2 topic hz /scan0
+ros2 topic hz /scan1
 ```
 
-Inside Docker:
+Map:
 
 ```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ls -la /dev/video*
-ros2 launch slam_mapping app_camera.launch.py
-```
-
-Leave this terminal running.
-
-### Terminal 5: Start Rosbridge And Camera Web Server
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 launch m3pro_teacher_web web_dashboard.launch.py port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-Leave this terminal running.
-
-If you get an error because port `9090` is already used, run this instead:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-### Terminal 6: Verify Navigation And Camera Topics
-
-Open a new terminal on your Mac:
-
-```bash
-ssh jetson@10.10.221.115
-docker exec -it m3pro bash
-```
-
-Inside Docker:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
-source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
-source /root/m3pro_teacher_ws/install/setup.bash 2>/dev/null || true
-export ROS_DOMAIN_ID=30
-export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
-ros2 topic list | grep -Ei 'map|odom|cmd_vel|goal|camera|image|depth|rgb|color'
-```
-
-Check the map:
-
-```bash
+ros2 node list | grep slam
 ros2 topic echo /map --once
 ```
 
-Check odometry:
+Navigation:
 
 ```bash
-ros2 topic echo /odom --once
+ros2 topic echo /amcl_pose --once
+ros2 run tf2_ros tf2_echo map base_footprint
 ```
 
-Check the camera:
+Camera:
 
 ```bash
+ros2 topic list -t | grep -E '/camera/(color|depth)'
 ros2 topic hz /camera/color/image_raw
+curl -I http://127.0.0.1:8080/camera/stream
 ```
 
-If `/camera/color/image_raw` does not exist, find the real camera topic:
+Ports:
 
 ```bash
-ros2 topic list | grep -Ei 'camera|image|depth|rgb|color'
+ss -ltnp | grep -E ':8080|:9090'
 ```
 
-Then restart the web server command with the real topic:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/REAL/CAMERA/TOPIC
-```
-
-### Terminal 7: Start Laravel Backend
-
-On your Mac:
-
-```bash
-cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
-php artisan serve --host=127.0.0.1 --port=8000
-```
-
-Leave this terminal running.
-
-### Terminal 8: Start Vite Frontend
-
-On your Mac, open another terminal:
-
-```bash
-cd "/Users/galystan/Documents/HETIC - WEB 3/RAA/evo-botics-raa/reservationApp"
-npm run dev -- --host 127.0.0.1
-```
-
-Leave this terminal running.
-
-### Terminal 9: Open The Admin Dashboard
-
-Open this URL in your browser:
-
-```text
-http://127.0.0.1:8000/admin/robot
-```
-
-Use these values:
-
-```text
-Robot IP: 10.10.221.115
-ROS Port: 9090
-Camera Port: 8080
-Camera Path: /camera/stream
-Save Map Path: /root/maps/admin_map
-```
-
-Test the camera stream directly:
-
-```text
-http://10.10.221.115:8080/camera/stream
-```
-
-## Useful Debug Commands
-
-Run these inside the Docker container after the common ROS shell setup.
-
-List all topics:
-
-```bash
-ros2 topic list
-```
-
-Find camera topics:
-
-```bash
-ros2 topic list | grep -Ei 'camera|image|depth|rgb|color'
-```
-
-Find navigation topics:
-
-```bash
-ros2 topic list | grep -Ei 'map|odom|scan|cmd_vel|goal|tf'
-```
-
-Check rosbridge is running:
-
-```bash
-ros2 node list | grep -Ei 'rosbridge|web'
-```
-
-Check camera frame rate:
-
-```bash
-ros2 topic hz /camera/color/image_raw
-```
-
-Check map data:
-
-```bash
-ros2 topic echo /map --once
-```
-
-Check robot odometry:
-
-```bash
-ros2 topic echo /odom --once
-```
-
-Check camera hardware inside Docker:
-
-```bash
-ls -la /dev/video*
-```
-
-Check port usage on the Jetson:
-
-```bash
-ss -ltnp | grep -Ei ':8080|:9090'
-```
-
-## Common Problems
-
-### The Dashboard Says ROS Bridge Connected But Map Is Waiting
-
-Navigation or SLAM is not publishing `/map`.
-
-For a new map, make sure this is running:
-
-```bash
-ros2 launch m3pro_teacher_nav slam_online.launch.py rviz:=false
-```
-
-For an existing map, make sure this is running:
-
-```bash
-ros2 launch m3pro_teacher_nav navigation.launch.py map:=/root/maps/demo_map.yaml rviz:=false
-```
-
-### The Camera Topic Does Not Exist
-
-Start the camera driver:
-
-```bash
-ros2 launch slam_mapping app_camera.launch.py
-```
-
-Then check:
-
-```bash
-ros2 topic list | grep -Ei 'camera|image|depth|rgb|color'
-```
-
-If there is still no camera topic, check camera hardware:
-
-```bash
-ls -la /dev/video*
-```
-
-If no `/dev/video*` exists inside Docker, the container does not have access to the camera device.
-
-### The Camera Topic Exists But The Web Stream Is Broken
-
-Restart the web server using the exact camera topic:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-Then test:
-
-```text
-http://10.10.221.115:8080/camera/stream
-```
-
-### Port 9090 Is Already Used
-
-Start the web server without starting a second rosbridge:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8080 camera_topic:=/camera/color/image_raw
-```
-
-### Port 8080 Is Already Used
-
-Use port `8081`:
-
-```bash
-ros2 launch m3pro_teacher_web web_dashboard.launch.py rosbridge:=false port:=8081 camera_topic:=/camera/color/image_raw
-```
-
-Then use these dashboard values:
-
-```text
-Camera Port: 8081
-Camera Path: /camera/stream
-```
+## Important Notes
+
+- Keep each ROS launch running in its own terminal.
+- If you stop the camera launch, `/camera/color/image_raw` disappears and `/camera/stream` has no frames.
+- If the Jetson host sees `/dev/video*` but Docker does not, the container was started without access to the camera device. Restart the robot Docker stack with USB/video device access, then launch the camera again.
+- If rosbridge is already running on `9090`, use `rosbridge:=false` for `web_dashboard.launch.py`.
+- The old Mac-to-Jetson deploy script is only needed when you changed the workspace on the Mac and want to send those changes to the Jetson host.

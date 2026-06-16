@@ -8,7 +8,7 @@ import { useRobotContext } from '@/Components/Robot/RobotContext';
 import type { LayoutComponent } from '@/types/inertia';
 
 const Overview: LayoutComponent = () => {
-    const { cameraUrl, telemetry } = useRobotContext();
+    const { cameraUrl, ros, telemetry } = useRobotContext();
     const rgb = telemetry.heartbeats.find((topic) => topic.key === 'rgb');
     const cameraOnline = rgb?.lastSeenAt != null && Date.now() - rgb.lastSeenAt < 5000;
 
@@ -33,7 +33,7 @@ const Overview: LayoutComponent = () => {
                                 {cameraOnline ? 'On' : 'Off'}
                             </span>
                         </div>
-                        <CameraPanel cameraUrl={cameraUrl} />
+                        <CameraPanel cameraUrl={cameraUrl} ros={ros} />
                     </div>
                     <ArmStateView joints={telemetry.armJoints} />
                 </div>

@@ -22,12 +22,14 @@ const JOINTS: JointConfig[] = [
     { key: 'joint6', label: 'Gripper', min: 20, max: 150 },
 ];
 
-const HOME: ArmJoints = { joint1: 90, joint2: 120, joint3: 10, joint4: 20, joint5: 90, joint6: 30, time: 900 };
+const HOME: ArmJoints = { joint1: 90, joint2: 90, joint3: 90, joint4: 90, joint5: 90, joint6: 90, time: 900 };
+const STOW: ArmJoints = { joint1: 90, joint2: 120, joint3: 10, joint4: 20, joint5: 90, joint6: 30, time: 900 };
 
 const PRESETS: Record<string, ArmJoints> = {
     Home: HOME,
-    Center: { joint1: 90, joint2: 90, joint3: 90, joint4: 90, joint5: 90, joint6: 90, time: 1000 },
-    Camera: { joint1: 90, joint2: 140, joint3: 30, joint4: 40, joint5: 90, joint6: 30, time: 1200 },
+    Stow: STOW,
+    Camera: { joint1: 90, joint2: 60, joint3: 45, joint4: 90, joint5: 90, joint6: 90, time: 1200 },
+    Up: { joint1: 90, joint2: 30, joint3: 60, joint4: 90, joint5: 90, joint6: 90, time: 1200 },
     Present: { joint1: 90, joint2: 100, joint3: 70, joint4: 80, joint5: 90, joint6: 30, time: 1200 },
     Open: { ...HOME, joint6: 30, time: 700 },
     Close: { ...HOME, joint6: 90, time: 700 },
@@ -37,6 +39,7 @@ const clampJoint = (value: number, joint: JointConfig) => Math.max(joint.min, Ma
 
 export default function ArmControlPanel({ currentJoints, ros }: Props) {
     const [enabled, setEnabled] = useState(false);
+    const [holdEnabled, setHoldEnabled] = useState(false);
     const [draft, setDraft] = useState<ArmJoints>(HOME);
     const sendTimerRef = useRef<number | null>(null);
 
@@ -54,13 +57,15 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
         return next;
     }, [draft]);
 
-    const publishArm = (message: ArmJoints, reason = 'Arm command') => {
+    const publishArm = (message: ArmJoints, reason = 'Arm command', shouldLog = true) => {
         if (!enabled) {
             ros.addLog('Arm command ignored because arm control is locked.', 'warn');
             return;
         }
         ros.publish('/arm6_joints', 'arm_msgs/msg/ArmJoints', message);
-        ros.addLog(`${reason}: [${JOINTS.map((joint) => message[joint.key]).join(', ')}]`, 'ok');
+        if (shouldLog) {
+            ros.addLog(`${reason}: [${JOINTS.map((joint) => message[joint.key]).join(', ')}]`, 'ok');
+        }
     };
 
     const schedulePublish = (next: ArmJoints) => {
@@ -85,6 +90,12 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
         publishArm(preset, `Arm preset ${name}`);
     };
 
+    useEffect(() => {
+        if (!enabled || !holdEnabled) return;
+        const timer = window.setInterval(() => publishArm(sanitizedDraft, 'Arm hold', false), 1500);
+        return () => window.clearInterval(timer);
+    }, [enabled, holdEnabled, sanitizedDraft]);
+
     return (
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
@@ -94,7 +105,10 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
                 </div>
                 <button
                     className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${enabled ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                    onClick={() => setEnabled((value) => !value)}
+                    onClick={() => {
+                        setEnabled((value) => !value);
+                        setHoldEnabled(false);
+                    }}
                     type="button"
                 >
                     {enabled ? 'Arm Unlocked' : 'Arm Locked'}
@@ -155,6 +169,15 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
                 type="button"
             >
                 Apply Arm Pose
+            </button>
+
+            <button
+                className={`mt-2 w-full rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${holdEnabled ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
+                disabled={!enabled}
+                onClick={() => setHoldEnabled((value) => !value)}
+                type="button"
+            >
+                {holdEnabled ? 'Hold Pose On' : 'Hold Pose Off'}
             </button>
         </section>
     );

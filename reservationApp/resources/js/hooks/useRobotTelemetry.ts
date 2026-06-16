@@ -24,8 +24,8 @@ export const HEARTBEAT_TOPICS: Array<Pick<TopicHeartbeat, 'key' | 'label' | 'top
     { key: 'amcl', label: 'AMCL', topic: '/amcl_pose' },
     { key: 'scan', label: 'LiDAR', topic: '/scan' },
     { key: 'imu', label: 'IMU', topic: '/imu/data' },
-    { key: 'rgb', label: 'RGB camera', topic: '/camera/color/camera_info' },
-    { key: 'depth', label: 'Depth camera', topic: '/camera/depth/camera_info' },
+    { key: 'rgb', label: 'RGB camera', topic: '/camera/color/image_raw' },
+    { key: 'depth', label: 'Depth camera', topic: '/camera/depth/image_raw' },
     { key: 'arm', label: 'Arm joints', topic: '/joint_states' },
 ];
 
@@ -115,8 +115,8 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
         const heartbeatUnsubscribers = [
             ros.subscribe('/scan', () => markTopic('scan'), { type: 'sensor_msgs/msg/LaserScan', throttleRate: 1000 }),
             ros.subscribe('/imu/data', () => markTopic('imu'), { type: 'sensor_msgs/msg/Imu', throttleRate: 1000 }),
-            ros.subscribe('/camera/color/camera_info', () => markTopic('rgb'), { type: 'sensor_msgs/msg/CameraInfo', throttleRate: 1000 }),
-            ros.subscribe('/camera/depth/camera_info', () => markTopic('depth'), { type: 'sensor_msgs/msg/CameraInfo', throttleRate: 1000 }),
+            ros.subscribe('/camera/color/image_raw', () => markTopic('rgb'), { type: 'sensor_msgs/msg/Image', throttleRate: 1000 }),
+            ros.subscribe('/camera/depth/image_raw', () => markTopic('depth'), { type: 'sensor_msgs/msg/Image', throttleRate: 1000 }),
         ];
 
         return () => {
