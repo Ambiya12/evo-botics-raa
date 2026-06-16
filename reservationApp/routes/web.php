@@ -15,6 +15,7 @@ Route::post('/locale', function (Request $request) {
     ]);
     session(['locale' => $validated['locale']]);
     app()->setLocale($validated['locale']);
+
     return redirect()->back();
 })->name('locale.switch');
 
