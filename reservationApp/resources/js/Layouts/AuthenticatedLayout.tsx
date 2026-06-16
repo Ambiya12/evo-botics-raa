@@ -3,6 +3,7 @@ import Dropdown from '@/Components/Dropdown';
 import NavLink from '@/Components/NavLink';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink';
 import { Link, usePage, router } from '@inertiajs/react';
+import type { SharedPageProps } from '@/types/auth';
 import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from '@/hooks/useTranslation';
 
@@ -14,7 +15,8 @@ const LOCALES: Record<string, { flag: string; label: string }> = {
 };
 
 export default function AuthenticatedLayout({ header, children }) {
-    const user = usePage().props.auth.user;
+    const user = usePage<SharedPageProps>().props.auth.user;
+    const isAdmin = user?.role === 'admin';
     const { t, locale } = useTranslation();
 
     const [showingNavigationDropdown, setShowingNavigationDropdown] = useState(false);
@@ -55,12 +57,22 @@ export default function AuthenticatedLayout({ header, children }) {
                                 >
                                     {t('Dashboard')}
                                 </NavLink>
-                                <NavLink
-                                    href={route('admin.robot.overview')}
-                                    active={route().current('admin.robot.*')}
-                                >
-                                    {t('Robot Admin')}
-                                </NavLink>
+                                {isAdmin && (
+                                    <NavLink
+                                        href={route('admin.robot.overview')}
+                                        active={route().current('admin.robot.*')}
+                                    >
+                                        {t('Robot Admin')}
+                                    </NavLink>
+                                )}
+                                {isAdmin && (
+                                    <NavLink
+                                        href={route('admin.users.index')}
+                                        active={route().current('admin.users.*')}
+                                    >
+                                        {t('Users')}
+                                    </NavLink>
+                                )}
                             </div>
                         </div>
 
@@ -95,7 +107,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                                 type="button"
                                                 className="inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none"
                                             >
-                                                {user.name}
+                                                {user?.name}
 
                                                 <svg
                                                     className="-me-0.5 ms-2 h-4 w-4"
@@ -187,21 +199,31 @@ export default function AuthenticatedLayout({ header, children }) {
                         >
                             {t('Dashboard')}
                         </ResponsiveNavLink>
-                        <ResponsiveNavLink
-                            href={route('admin.robot.overview')}
-                            active={route().current('admin.robot.*')}
-                        >
-                            {t('Robot Admin')}
-                        </ResponsiveNavLink>
+                        {isAdmin && (
+                            <ResponsiveNavLink
+                                href={route('admin.robot.overview')}
+                                active={route().current('admin.robot.*')}
+                            >
+                                {t('Robot Admin')}
+                            </ResponsiveNavLink>
+                        )}
+                        {isAdmin && (
+                            <ResponsiveNavLink
+                                href={route('admin.users.index')}
+                                active={route().current('admin.users.*')}
+                            >
+                                {t('Users')}
+                            </ResponsiveNavLink>
+                        )}
                     </div>
 
                     <div className="border-t border-gray-200 pb-1 pt-4">
                         <div className="px-4">
                             <div className="text-base font-medium text-gray-800">
-                                {user.name}
+                                {user?.name}
                             </div>
                             <div className="text-sm font-medium text-gray-500">
-                                {user.email}
+                                {user?.email}
                             </div>
                         </div>
 
