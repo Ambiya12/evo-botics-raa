@@ -56,7 +56,7 @@ class Reservation extends Component
             }
 
             try {
-                Mail::mailer('smtp')->to($this->email)->send(new ReservationConfirmation(
+                Mail::to($this->email)->send(new ReservationConfirmation(
                     name: $this->name,
                     email: $this->email,
                     date: $this->selectedDate,
@@ -64,7 +64,7 @@ class Reservation extends Component
                     endTime: $this->selectedEndTime,
                     people: $this->peopleCount,
                 ));
-                $this->resultMessage = __('A room has been found for your reservation! You will receive your confirmation email.');
+                $this->resultMessage = __('A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)');
             } catch (\Throwable $e) {
                 Log::error('Mail send failed: ' . $e->getMessage(), [
                     'email' => $this->email,

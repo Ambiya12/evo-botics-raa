@@ -60,7 +60,7 @@
   "I will drive you to your room": "我将带您到您的房间",
   "The end time must be after the start time.": "结束时间必须在开始时间之后。",
   "No email address provided.": "未提供邮箱地址。",
-  "A room has been found for your reservation! You will receive your confirmation email.": "已为您的预订找到房间！您将收到确认邮件。",
+  "A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)": "已为您的预订找到房间！您将收到确认邮件。（如果没收到，请检查垃圾邮件。）",
   "Room found but email could not be sent. Please contact support.": "找到房间但无法发送邮件。请联系客服。",
   "Sorry, no rooms are available for this time slot. Please try another time.": "抱歉，该时间段没有可用房间。请尝试其他时间。",
   "Password": "密码",
