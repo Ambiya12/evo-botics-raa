@@ -34,6 +34,9 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+            ],
             'locale' => app()->getLocale(),
             'translations' => fn () => [
                 app()->getLocale() => $this->loadTranslations(app()->getLocale()),
