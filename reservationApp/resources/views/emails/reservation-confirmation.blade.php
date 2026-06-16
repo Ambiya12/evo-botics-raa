@@ -25,7 +25,8 @@
 
     <div style="margin-top: 24px; text-align: center;">
         <p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Present this QR code at the kiosk to validate your reservation:</p>
-        <img src="{{ $qrCodeDataUri }}" alt="QR Code" style="width: 200px; height: 200px;">
+        <img src="{{ $message->embedData($qrCodePng, 'qrcode.png', 'image/png') }}" alt="QR Code" style="width: 200px; height: 200px;">
+        <p style="color: #9ca3af; font-size: 12px; margin-top: 8px;">If the image does not display, the QR code is also attached as a file.</p>
     </div>
 </body>
 </html>

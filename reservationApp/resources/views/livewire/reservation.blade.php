@@ -1,122 +1,134 @@
 <div class="min-h-full">
 
     @php
-        $__t = json_decode(file_get_contents(lang_path(app()->getLocale().'.json')), true) ?? [];
+        $__t = file_exists(lang_path(app()->getLocale().'.json')) ? json_decode(file_get_contents(lang_path(app()->getLocale().'.json')), true) ?? [] : [];
         $__locale = app()->getLocale();
     @endphp
 
     <script>
-        document.addEventListener('alpine:init', () => {
-            Alpine.data('reservationForm', () => ({
-                t: @json($__t),
-                locale: '{{ $__locale }}',
-                month: new Date().getMonth(),
-                year: new Date().getFullYear(),
-                localName: '',
-                localEmail: '',
-                localDate: '',
-                localStartTime: '',
-                localEndTime: '',
-                localPeople: 1,
-                showTimePicker: false,
-                nameError: '',
-                emailError: '',
+        window.reservationForm = () => ({
+            t: @json($__t),
+            locale: '{{ $__locale }}',
+            month: new Date().getMonth(),
+            year: new Date().getFullYear(),
+            localName: '',
+            localEmail: '',
+            localDate: '',
+            localStartTime: '',
+            localEndTime: '',
+            localPeople: 1,
+            showTimePicker: false,
+            nameError: '',
+            emailError: '',
 
-                validate() {
-                    let valid = true;
-                    this.nameError = '';
-                    this.emailError = '';
-                    if (!this.localName || this.localName.trim().length < 2) {
-                        this.nameError = this.t['Please enter a valid name (at least 2 characters).'] || 'Please enter a valid name (at least 2 characters).';
-                        valid = false;
-                    } else if (/[=<>&'\x22]/.test(this.localName)) {
-                        this.nameError = this.t['Name contains invalid characters.'] || 'Name contains invalid characters.';
-                        valid = false;
-                    }
-                    if (!this.localEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.localEmail)) {
-                        this.emailError = this.t['Please enter a valid email address.'] || 'Please enter a valid email address.';
-                        valid = false;
-                    }
-                    return valid;
-                },
-                async book() {
-                    if (!this.validate()) return;
-                    await this.$wire.reserve();
-                    setTimeout(() => this.$wire.checkAvailability(), 3000);
-                },
-
-                get daysInMonth() {
-                    return new Date(this.year, this.month + 1, 0).getDate();
-                },
-                get firstDay() {
-                    return new Date(this.year, this.month, 1).getDay();
-                },
-                get monthName() {
-                    return new Date(this.year, this.month).toLocaleString(this.locale, { month: 'long' });
-                },
-                get formattedDate() {
-                    if (!this.localDate) return '-';
-                    const [y, m, d] = this.localDate.split('-');
-                    return new Date(y, m - 1, d).toLocaleDateString(this.locale, {
-                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-                    });
-                },
-                prevMonth() {
-                    if (this.month === 0) { this.month = 11; this.year--; }
-                    else { this.month--; }
-                },
-                nextMonth() {
-                    if (this.month === 11) { this.month = 0; this.year++; }
-                    else { this.month++; }
-                },
-                isPast(day) {
-                    const date = new Date(this.year, this.month, day);
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    return date <= today;
-                },
-                get endTimeOptions() {
-                    if (!this.localStartTime) return [];
-                    const start = parseInt(this.localStartTime.split(':')[0]);
-                    return Array.from({length: 20 - start}, (_, i) => start + 1 + i);
-                },
-                async selectDate(day) {
-                    if (this.isPast(day)) return;
-                    const d = `${this.year}-${String(this.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    this.localDate = d;
-                    this.localStartTime = '';
-                    this.localEndTime = '';
-                    await this.$wire.set('selectedDate', d);
-                    await this.$wire.set('selectedStartTime', '');
-                    await this.$wire.set('selectedEndTime', '');
-                    this.showTimePicker = true;
-                },
-                async selectStartTime(hour) {
-                    const t = String(hour).padStart(2, '0') + ':00';
-                    this.localStartTime = t;
-                    await this.$wire.set('selectedStartTime', t);
-                    const endHour = Math.min(hour + 1, 20);
-                    const endT = String(endHour).padStart(2, '0') + ':00';
-                    this.localEndTime = endT;
-                    await this.$wire.set('selectedEndTime', endT);
-                },
-                async selectEndTime(hour) {
-                    const t = String(hour).padStart(2, '0') + ':00';
-                    this.localEndTime = t;
-                    await this.$wire.set('selectedEndTime', t);
-                    this.showTimePicker = false;
-                },
-                async syncName() {
-                    await this.$wire.set('name', this.localName);
-                },
-                async syncEmail() {
-                    await this.$wire.set('email', this.localEmail);
-                },
-                async updatePeople(val) {
-                    this.localPeople = val;
-                    await this.$wire.set('peopleCount', val);
+            validate() {
+                let valid = true;
+                this.nameError = '';
+                this.emailError = '';
+                if (!this.localName || this.localName.trim().length < 2) {
+                    this.nameError = this.t['Please enter a valid name (at least 2 characters).'] || 'Please enter a valid name (at least 2 characters).';
+                    valid = false;
+                } else if (/[=<>&'\x22]/.test(this.localName)) {
+                    this.nameError = this.t['Name contains invalid characters.'] || 'Name contains invalid characters.';
+                    valid = false;
                 }
-            }));
+                if (!this.localEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.localEmail)) {
+                    this.emailError = this.t['Please enter a valid email address.'] || 'Please enter a valid email address.';
+                    valid = false;
+                }
+                return valid;
+            },
+            async book() {
+                if (!this.validate()) return;
+                await this.$wire.reserve();
+                setTimeout(async () => {
+                    await this.$wire.checkAvailability();
+                }, 3000);
+            },
+
+            daysInMonth() {
+                return new Date(this.year, this.month + 1, 0).getDate();
+            },
+            firstDay() {
+                return new Date(this.year, this.month, 1).getDay();
+            },
+            monthName() {
+                return new Date(this.year, this.month).toLocaleString(this.locale, { month: 'long' });
+            },
+            formattedDate() {
+                if (!this.localDate) return '-';
+                const [y, m, d] = this.localDate.split('-');
+                return new Date(y, m - 1, d).toLocaleDateString(this.locale, {
+                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+                });
+            },
+            prevMonth() {
+                if (this.month === 0) { this.month = 11; this.year--; }
+                else { this.month--; }
+            },
+            nextMonth() {
+                if (this.month === 11) { this.month = 0; this.year++; }
+                else { this.month++; }
+            },
+            isPast(day) {
+                const date = new Date(this.year, this.month, day);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                return date <= today;
+            },
+            endTimeOptions() {
+                if (!this.localStartTime) return [];
+                const start = parseInt(this.localStartTime.split(':')[0]);
+                return Array.from({length: 20 - start}, (_, i) => start + 1 + i);
+            },
+            async selectDate(day) {
+                if (this.isPast(day)) return;
+                const d = `${this.year}-${String(this.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                this.localDate = d;
+                this.localStartTime = '';
+                this.localEndTime = '';
+                await this.$wire.set('selectedDate', d);
+                await this.$wire.set('selectedStartTime', '');
+                await this.$wire.set('selectedEndTime', '');
+                this.showTimePicker = true;
+            },
+            async selectStartTime(hour) {
+                const t = String(hour).padStart(2, '0') + ':00';
+                this.localStartTime = t;
+                await this.$wire.set('selectedStartTime', t);
+                const endHour = Math.min(hour + 1, 20);
+                const endT = String(endHour).padStart(2, '0') + ':00';
+                this.localEndTime = endT;
+                await this.$wire.set('selectedEndTime', endT);
+            },
+            async selectEndTime(hour) {
+                const t = String(hour).padStart(2, '0') + ':00';
+                this.localEndTime = t;
+                await this.$wire.set('selectedEndTime', t);
+                this.showTimePicker = false;
+            },
+            async syncName() {
+                await this.$wire.set('name', this.localName);
+            },
+            async syncEmail() {
+                await this.$wire.set('email', this.localEmail);
+            },
+            async updatePeople(val) {
+                this.localPeople = val;
+                await this.$wire.set('peopleCount', val);
+            },
+            resetForm() {
+                this.localName = '';
+                this.localEmail = '';
+                this.localDate = '';
+                this.localStartTime = '';
+                this.localEndTime = '';
+                this.localPeople = 1;
+                this.showTimePicker = false;
+                this.nameError = '';
+                this.emailError = '';
+                this.$wire.resetForm();
+            }
         });
     </script>
 
@@ -184,16 +196,19 @@
     <main>
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
             <div class="grid grid-cols-1 gap-8 lg:grid-cols-3"
-                 x-data="reservationForm">
+                 x-data="{
+                    ...reservationForm(),
+                    step: @entangle('step'),
+                    roomFound: @entangle('roomFound'),
+                    resultMessage: @entangle('resultMessage'),
+                 }">
 
-            @if($step === 'form')
-
-                <div class="lg:col-span-2">
+                <div class="lg:col-span-2" x-show="step === 'form'" x-cloak>
                     <h2 class="mb-4 text-xl font-bold">{{ __('1. Pick a date') }}</h2>
                     <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <div class="mb-4 flex items-center justify-between">
                             <button @click="prevMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&larr;</button>
-                            <span class="text-lg font-semibold capitalize" x-text="monthName + ' ' + year"></span>
+                            <span class="text-lg font-semibold capitalize" x-text="monthName() + ' ' + year"></span>
                             <button @click="nextMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&rarr;</button>
                         </div>
 
@@ -204,10 +219,10 @@
                         </div>
 
                         <div class="mt-1 grid grid-cols-7 gap-1 text-center">
-                            <template x-for="blank in firstDay" :key="'b' + blank">
+                            <template x-for="blank in firstDay()" :key="'b' + blank">
                                 <div></div>
                             </template>
-                            <template x-for="day in daysInMonth" :key="day">
+                            <template x-for="day in daysInMonth()" :key="day">
                                 <button @click="selectDate(day)"
                                         :disabled="isPast(day)"
                                         :class="{
@@ -256,16 +271,16 @@
                                 <div>
                                     <p class="mb-2 text-sm font-semibold text-gray-500">{{ __('End') }}</p>
                                     <div class="space-y-1">
-                                        <template x-if="!localStartTime">
-                                            <p class="text-sm text-gray-400">{{ __('Pick start time first') }}</p>
-                                        </template>
-                                        <template x-for="hour in endTimeOptions" :key="'e'+hour">
-                                            <button @click="selectEndTime(hour)"
-                                                    :class="localEndTime === String(hour).padStart(2, '0') + ':00' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
-                                                    class="w-full rounded-lg px-4 py-2 text-center font-medium transition">
-                                                <span x-text="String(hour).padStart(2, '0') + ':00'"></span>
-                                            </button>
-                                        </template>
+                                        <p x-show="!localStartTime" class="text-sm text-gray-400">{{ __('Pick start time first') }}</p>
+                                        <div x-show="localStartTime" class="space-y-1">
+                                            <template x-for="hour in endTimeOptions()" :key="'e'+hour">
+                                                <button @click="selectEndTime(hour)"
+                                                        :class="localEndTime === String(hour).padStart(2, '0') + ':00' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
+                                                        class="w-full rounded-lg px-4 py-2 text-center font-medium transition">
+                                                    <span x-text="String(hour).padStart(2, '0') + ':00'"></span>
+                                                </button>
+                                            </template>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -277,7 +292,7 @@
                     </div>
                 </div>
 
-                <div class="space-y-6">
+                <div class="space-y-6" x-show="step === 'form'" x-cloak>
                     <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                         <h2 class="mb-4 text-xl font-bold">{{ __('Your information') }}</h2>
                         <div class="space-y-4">
@@ -311,7 +326,7 @@
                             </div>
                             <div>
                                 <span class="text-sm text-gray-500">{{ __('Date') }}</span>
-                                <p class="text-lg font-semibold" x-text="formattedDate"></p>
+                                <p class="text-lg font-semibold" x-text="formattedDate()"></p>
                             </div>
                             <div>
                                 <span class="text-sm text-gray-500">{{ __('Time') }}</span>
@@ -338,44 +353,39 @@
                         {{ __('Book now') }}
                     </button>
                 </div>
-            </div>
 
-            @elseif($step === 'checking')
-
-            <div class="lg:col-span-3 flex flex-col items-center justify-center py-32">
-                <svg class="size-20 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                <h2 class="mt-6 text-2xl font-semibold text-gray-900">{{ __('Checking availability...') }}</h2>
-                <p class="mt-2 text-gray-500">{{ __('We are looking for an available room, please wait.') }}</p>
-            </div>
-
-            @elseif($step === 'result')
-
-            <div class="lg:col-span-3 flex flex-col items-center justify-center py-32">
-                @if($roomFound)
-                    <svg class="size-24 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32" x-show="step === 'checking'" x-cloak>
+                    <svg class="size-20 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                @else
-                    <svg class="size-24 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-                    </svg>
-                @endif
+                    <h2 class="mt-6 text-2xl font-semibold text-gray-900">{{ __('Checking availability...') }}</h2>
+                    <p class="mt-2 text-gray-500">{{ __('We are looking for an available room, please wait.') }}</p>
+                </div>
 
-                <h2 class="mt-6 text-2xl font-semibold {{ $roomFound ? 'text-green-700' : 'text-red-700' }}">
-                    {{ $roomFound ? __('Room found!') : __('No room available') }}
-                </h2>
-                <p class="mt-2 max-w-md text-center text-gray-600">{{ $resultMessage }}</p>
+                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32" x-show="step === 'result'" x-cloak>
+                    <template x-if="roomFound">
+                        <svg class="size-24 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </template>
+                    <template x-if="!roomFound">
+                        <svg class="size-24 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                        </svg>
+                    </template>
 
-                <button wire:click="resetForm"
-                        class="mt-8 rounded-md bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
-                    {{ __('Make another reservation') }}
-                </button>
+                    <h2 class="mt-6 text-2xl font-semibold" :class="roomFound ? 'text-green-700' : 'text-red-700'"
+                        x-text="roomFound ? (t['Room found!'] || 'Room found!') : (t['No room available'] || 'No room available')">
+                    </h2>
+                    <p class="mt-2 max-w-md text-center text-gray-600" x-text="resultMessage"></p>
+
+                    <button @click="resetForm()"
+                            class="mt-8 rounded-md bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
+                        {{ __('Make another reservation') }}
+                    </button>
+                </div>
             </div>
-
-            @endif
         </div>
     </main>
 </div>

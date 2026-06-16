@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -13,7 +14,7 @@ class ReservationConfirmation extends Mailable
 {
     use Queueable, SerializesModels;
 
-    public string $qrCodeDataUri;
+    public string $qrCodePng;
 
     public function __construct(
         public string $name,
@@ -39,8 +40,7 @@ class ReservationConfirmation extends Mailable
             'signature' => $signature,
         ]);
 
-        $svg = QrCode::size(300)->generate($qrData);
-        $this->qrCodeDataUri = 'data:image/svg+xml;base64,'.base64_encode($svg);
+        $this->qrCodePng = QrCode::format('png')->size(500)->generate($qrData);
     }
 
     public function envelope(): Envelope
@@ -59,6 +59,9 @@ class ReservationConfirmation extends Mailable
 
     public function attachments(): array
     {
-        return [];
+        return [
+            Attachment::fromData(fn () => $this->qrCodePng, 'qrcode.png')
+                ->withMime('image/png'),
+        ];
     }
 }

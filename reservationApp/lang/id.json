@@ -60,7 +60,7 @@
   "I will drive you to your room": "Saya akan mengantar Anda ke ruangan",
   "The end time must be after the start time.": "Waktu selesai harus setelah waktu mulai.",
   "No email address provided.": "Tidak ada alamat email yang diberikan.",
-  "A room has been found for your reservation! You will receive your confirmation email.": "Ruangan telah ditemukan untuk reservasi Anda! Anda akan menerima email konfirmasi.",
+  "A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)": "Ruangan telah ditemukan untuk reservasi Anda! Anda akan menerima email konfirmasi. (Periksa folder spam jika tidak diterima.)",
   "Room found but email could not be sent. Please contact support.": "Ruangan ditemukan tetapi email tidak dapat dikirim. Harap hubungi dukungan.",
   "Sorry, no rooms are available for this time slot. Please try another time.": "Maaf, tidak ada ruangan yang tersedia untuk slot waktu ini. Silakan coba waktu lain.",
   "Password": "Kata Sandi",
