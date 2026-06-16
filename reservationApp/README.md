@@ -11,6 +11,10 @@ Commencez par cloner le dépôt puis ouvrez votre terminal et lancez ces command
 cd .\reservationApp\
 composer install
 ```
+```bash
+./vendor/bin/sail composer require livewire/livewire
+```
+
 En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME et DB_PASSWORD du fichier .env.example et renommez le .env.
 
 # Lancement du projet avec Docker
