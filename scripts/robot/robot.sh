@@ -20,6 +20,7 @@ Usage: robot.sh <commande> [args]
   stop    <svc|profil|all>    Arrête des services (tmux + process ROS)
   restart [svc|profil]        Stop all + start (sans arg : reprend le dernier profil)
   status                      Sessions tmux + topics ROS + ports
+  health                      Specs + charge CPU/RAM + top process (lecture seule)
   logs    <svc>               Attache la sortie d'un service (Ctrl-b d pour détacher)
   config  ip|container|user|show [valeur]
 
@@ -129,6 +130,11 @@ _port_check() {
   fi
 }
 
+cmd_health() {
+  echo "== Santé Jetson (${JETSON_USER}@${JETSON_IP}) =="
+  jetson_health
+}
+
 cmd_logs() {
   local name="${1:-}"
   [ -n "$name" ] || { echo "usage: robot.sh logs <svc>" >&2; exit 1; }
@@ -171,6 +177,7 @@ case "${1:-}" in
   stop)             shift; cmd_stop "$@" ;;
   restart)          shift; cmd_restart "$@" ;;
   status)           shift; cmd_status "$@" ;;
+  health)           shift; cmd_health "$@" ;;
   logs)             shift; cmd_logs "$@" ;;
   config)           shift; cmd_config "$@" ;;
   ""|-h|--help|help) usage ;;

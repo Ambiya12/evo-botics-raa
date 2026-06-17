@@ -37,6 +37,31 @@ ensure_tmux() {
   fi
 }
 
+# Snapshot lecture seule de l'état du Jetson (specs + charge + RAM + top process).
+# Aucune écriture : sûr même sur une stack ROS lancée par un tiers.
+jetson_health() {
+  _ssh 'bash -lc "
+    echo ===== MODELE / OS =====;
+    tr -d \"\0\" < /proc/device-tree/model 2>/dev/null; echo;
+    . /etc/os-release 2>/dev/null && echo \"OS: \$PRETTY_NAME\";
+    uname -r | sed \"s/^/Kernel: /\";
+    echo; echo ===== CPU =====;
+    lscpu 2>/dev/null | grep -E \"^Architecture|^Model name|^CPU\(s\)|^CPU max\";
+    echo; echo ===== RAM / SWAP =====; free -h;
+    echo; echo ===== DISQUE / =====; df -h / 2>/dev/null;
+    echo; echo ===== CHARGE / UPTIME =====; uptime;
+    echo; echo ===== TOP PROCESSUS =====;
+    top -bn1 2>/dev/null | sed -n \"1,3p;7,15p\";
+    echo; echo ===== TEMPERATURES =====;
+    for z in /sys/devices/virtual/thermal/thermal_zone*; do
+      t=\$(cat \$z/temp 2>/dev/null); ty=\$(cat \$z/type 2>/dev/null);
+      [ -n \"\$t\" ] && echo \"\$ty: \$((t/1000)) C\";
+    done 2>/dev/null;
+    echo; echo ===== CONTENEURS DOCKER =====;
+    docker ps --format \"table {{.Names}}\t{{.Image}}\t{{.Status}}\" 2>/dev/null;
+  "'
+}
+
 # --- Définition des services -------------------------------------------------
 
 # Commande ROS lancée pour chaque service.
