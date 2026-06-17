@@ -130,29 +130,12 @@
                 await this.$wire.set('selectedEndTime', t);
                 this.showTimePicker = false;
             },
-            async syncName() {
-                await this.$wire.set('name', this.localName);
-            },
-            async syncEmail() {
-                await this.$wire.set('email', this.localEmail);
-            },
             async updatePeople(val) {
                 this.localPeople = val;
                 await this.$wire.set('peopleCount', val);
-            },
-            resetForm() {
-                this.localName = '';
-                this.localEmail = '';
-                this.localDate = '';
-                this.localStartTime = '';
-                this.localEndTime = '';
-                this.localPeople = 1;
-                this.showTimePicker = false;
-                this.nameError = '';
-                this.emailError = '';
-                this.$wire.resetForm();
             }
-        });
+        }));
+    });
     </script>
 
     <nav class="bg-white border-b border-gray-100">
@@ -225,7 +208,7 @@
                         <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
                             <div class="mb-4 flex items-center justify-between">
                                 <button @click="prevMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&larr;</button>
-                                <span class="text-lg font-semibold capitalize" x-text="monthName + ' ' + year"></span>
+                                <span class="text-lg font-semibold capitalize" x-text="monthName() + ' ' + year"></span>
                                 <button @click="nextMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&rarr;</button>
                             </div>
 
