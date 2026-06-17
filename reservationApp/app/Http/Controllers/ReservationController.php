@@ -72,19 +72,21 @@ class ReservationController extends Controller
         return DB::transaction(function () use ($reservation) {
             $reservation->bookingSession->update(['is_available' => true]);
 
+            $reservation->update(['status' => 'cancelled']);
+
             ActivityLog::create([
-                'event_type' => 'reservation_cancelled',
-                'description' => "Réservation annulée par l'utilisateur pour la salle {$reservation->bookingSession->room->name}",
+                'action' => 'reservation_cancelled',
+                'description' => "Réservation annulée par l'utilisateur {$reservation->customer_name} pour la salle {$reservation->bookingSession->room->name}",
+                'loggable_id' => $reservation->id,
+                'loggable_type' => Reservation::class,
                 'payload' => [
                     'user_id' => auth()->id(),
                     'customer_name' => $reservation->customer_name,
                     'uuid' => $reservation->uuid
                 ]
             ]);
-            
-            $reservation->delete();
 
-            return response()->json(['message' => 'Réservation annulée avec succès.']);
+            return redirect()->back()->with(['message' => 'Réservation annulée avec succès.']);
         });
     }
 }

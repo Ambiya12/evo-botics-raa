@@ -18,6 +18,7 @@
         }
         [x-cloak] { display: none !important; }
 	</style>
+	<meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 <body class="font-sans antialiased">
 {{ $slot }}
