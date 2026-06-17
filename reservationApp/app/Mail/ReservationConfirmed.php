@@ -10,6 +10,7 @@ use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
+use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class ReservationConfirmed extends Mailable
 {
@@ -20,7 +21,20 @@ class ReservationConfirmed extends Mailable
      */
     public function __construct(
         public Reservation $reservation,
-    ) {}
+    ) {
+        $payload = json_encode([
+            'name' => $reservation->customer_name,
+            'email' => $reservation->customer_email,
+            'date' => $reservation->bookingSession->date->format('Y/m/d'),
+            'startTime' => $reservation->bookingSession->start_at,
+            'endTime' => $reservation->bookingSession->end_at,
+            'people' => $reservation->attendee_count,
+        ]);
+        $secret = config('app.key');
+        $signature = hash_hmac('sha256', $payload, $secret);
+        $qrData = json_encode(['payload' => $payload, 'signature' => $signature]);
+        $this->qrCodePng = QrCode::format('png')->size(300)->generate($qrData);
+    }
     /**
      * Get the message envelope.
      */
@@ -41,6 +55,8 @@ class ReservationConfirmed extends Mailable
         );
     }
 
+    public string $qrCodePng;
+    
     /**
      * Get the attachments for the message.
      *
@@ -48,6 +64,9 @@ class ReservationConfirmed extends Mailable
      */
     public function attachments(): array
     {
-        return [];
+        return [
+            Attachment::fromData(fn () => $this->qrCodePng, 'qrcode.png')
+                ->withMime('image/png'),
+        ];
     }
 }

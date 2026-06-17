@@ -100,7 +100,7 @@ class BookingSessionController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'message' => "La session a été réservée avec succès. Vous recevrez un mail de confirmation sous peu.",
+            'message' => __('A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)'),
             'data' => [
                 'reservation' => $reservation,
                 'session' => $session
