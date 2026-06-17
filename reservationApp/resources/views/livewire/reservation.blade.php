@@ -81,9 +81,7 @@
             formattedDate() {
                 if (!this.localDate) return '-';
                 const [y, m, d] = this.localDate.split('-');
-                return new Date(y, m - 1, d).toLocaleDateString(this.locale, {
-                    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
-                });
+                return `${y}/${m}/${d}`;
             },
             prevMonth() {
                 if (this.month === 0) { this.month = 11; this.year--; }
