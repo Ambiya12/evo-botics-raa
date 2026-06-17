@@ -15,23 +15,27 @@ usage() {
   cat <<EOF
 Usage: robot.sh <commande> [args]
 
-  setup                       Déploie evo_ws -> Jetson, copie dans Docker, colcon build
+  recover [profil]            Récupération post-reboot tout-en-un : evo_ws + stack + MCU + état
+  setup [--push]              Met evo_ws à dispo (conteneur > host) + rebuild. --push pour ENVOYER le local
+  pull                        Récupère evo_ws/src du conteneur -> Mac (le robot fait foi)
   start   <svc|profil>        Démarre des services en tmux détaché
   stop    <svc|profil|all>    Arrête des services (tmux + process ROS)
   restart [svc|profil]        Stop all + start (sans arg : reprend le dernier profil)
-  status                      Sessions tmux + topics ROS + ports
+  mcu     [--force]           Réveille la carte (redémarre l'agent micro-ROS si flux figé)
+  status                      Sessions tmux + topics ROS + MCU + ports
   health                      Specs + charge CPU/RAM + top process (lecture seule)
   logs    <svc>               Attache la sortie d'un service (Ctrl-b d pour détacher)
   config  ip|container|user|show [valeur]
 
-Services : bringup camera web slam nav
+Services : bringup camera vision web slam nav
 Profils  : map (carte) | navigate (nav) | base | all
 
 Exemples :
+  ./robot.sh recover map      # après un reboot du Jetson
   ./robot.sh setup
   ./robot.sh start map
+  ./robot.sh mcu              # carte muette ? réveille l'agent micro-ROS
   ./robot.sh config ip 10.10.220.132
-  ./robot.sh restart
   ./robot.sh stop all
 EOF
 }
@@ -51,17 +55,56 @@ require_container() {
 
 # --- Commandes ---------------------------------------------------------------
 
+# Récupère evo_ws/src DU CONTENEUR vers le Mac (le robot est la source de vérité).
+# tar-stream over ssh : pas de fichier temporaire intermédiaire.
+cmd_pull() {
+  local container; container="$(require_container)"
+  echo "[pull] ${container}:${DOCKER_WS}/src -> ${REPO_ROOT}/evo_ws/src"
+  _ssh "docker exec ${container} tar -C ${DOCKER_WS} -cf - src" \
+    | tar -C "${REPO_ROOT}/evo_ws" -xf -
+  echo "[pull] terminé — evo_ws/src local resynchronisé depuis le robot"
+}
+
+# setup par défaut = récupère depuis le robot puis rebuild dans le conteneur.
+# Ne pousse PLUS le local (qui peut être périmé) -> pas de rétrogradation accidentelle.
 cmd_setup() {
+  if [ "${1:-}" = "--push" ]; then
+    cmd_setup_push
+    return
+  fi
   ensure_tmux
   local container; container="$(require_container)"
-  echo "[setup] déploiement evo_ws -> ${JETSON_USER}@${JETSON_IP}:${HOST_WS}"
+  echo "[setup] mise à disposition de evo_ws (conteneur > host) + rebuild"
+  ensure_evo_ws "$container"
+  echo "[setup] colcon build dans Docker (${container})"
+  local build; build="$(_ros_prelude); cd ${DOCKER_WS} && colcon build --symlink-install"
+  _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS} ${container} bash -lc \"${build}\""
+  echo "[setup] terminé"
+}
+
+# setup --push = ancien comportement : ENVOIE le evo_ws local -> Jetson -> Docker + build.
+# Gardé pour pousser de vraies modifs locales, mais protégé par une confirmation car le
+# local peut écraser une version plus récente du conteneur.
+cmd_setup_push() {
+  ensure_tmux
+  local container; container="$(require_container)"
+  echo "⚠️  [setup --push] Va ÉCRASER le code du conteneur (${container}) avec ton evo_ws LOCAL."
+  echo "    Si ton local est périmé, tu rétrogrades le robot (perte de evo_vision / params caméra)."
+  echo "    Pense à './robot.sh pull' d'abord si tu n'es pas sûr."
+  printf "    Continuer ? [y/N] "
+  local ans; read -r ans
+  case "$ans" in
+    y|Y|yes|YES|o|O|oui|OUI) ;;
+    *) echo "[setup --push] annulé"; return 1 ;;
+  esac
+  echo "[setup --push] déploiement evo_ws local -> ${JETSON_USER}@${JETSON_IP}:${HOST_WS}"
   JETSON_IP="${JETSON_IP}" JETSON_USER="${JETSON_USER}" JETSON_WS="${HOST_WS}" \
     "${REPO_ROOT}/scripts/deploy.sh"
-  echo "[setup] copie host -> Docker (${container}) + colcon build"
+  echo "[setup --push] copie host -> Docker (${container}) + colcon build"
   _ssh "docker exec ${container} rm -rf ${DOCKER_WS}; docker cp ${HOST_WS} ${container}:${DOCKER_WS}"
   local build; build="$(_ros_prelude); cd ${DOCKER_WS} && colcon build --symlink-install"
-  _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=UDPv4 ${container} bash -lc \"${build}\""
-  echo "[setup] terminé"
+  _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS} ${container} bash -lc \"${build}\""
+  echo "[setup --push] terminé"
 }
 
 cmd_start() {
@@ -100,6 +143,63 @@ cmd_restart() {
   cmd_start "$target"
 }
 
+# Réveille la carte (MCU) si son flux micro-ROS est figé : redémarre l'agent série pour
+# forcer une nouvelle session XRCE, puis attend la reprise du flux. `--force` redémarre
+# même si la carte semble déjà vivante.
+cmd_mcu() {
+  local force=""; [ "${1:-}" = "--force" ] && force=1
+  local container; container="$(require_container)"
+  local agent; agent="$(resolve_agent_container)"
+  [ -n "$agent" ] || { echo "Agent micro-ROS introuvable (aucune image micro-ros active)." >&2; exit 1; }
+  echo "[mcu] conteneur=${container} agent=${agent} topic=${MCU_PROBE_TOPIC}"
+  if [ -z "$force" ] && mcu_is_alive "$container"; then
+    echo "[mcu] carte déjà vivante (flux ${MCU_PROBE_TOPIC} détecté) — rien à faire (--force pour relancer)."
+  else
+    echo "[mcu] MCU muet — redémarrage de l'agent ${agent}"
+    _ssh "docker restart ${agent}" >/dev/null
+    echo "[mcu] attente de la reprise du flux (poll ~20 s)..."
+    if ! wait_for_mcu "$container"; then
+      echo "[mcu] ÉCHEC : le MCU reste muet. Reset physique de la carte requis (bouton sur l'expansion board)." >&2
+      exit 1
+    fi
+  fi
+  echo "[mcu] OK — fréquences :"
+  _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS} ${container} bash -lc '
+    source /opt/ros/humble/setup.bash 2>/dev/null
+    for t in /odom_raw /imu/data_raw /joint_states; do
+      printf \"  %-16s \" \"\$t\"
+      timeout 5 ros2 topic hz \$t 2>/dev/null | grep \"average rate\" | head -1 || echo \"(muet)\"
+    done'"
+}
+
+# Orchestrateur de récupération post-reboot : evo_ws -> stack -> MCU -> état.
+# Profil = argument, sinon dernier profil mémorisé, sinon 'map'.
+cmd_recover() {
+  ensure_tmux
+  local profile="${1:-}"
+  if [ -z "$profile" ]; then
+    profile="$(cat "${LAST_PROFILE_FILE}" 2>/dev/null || true)"
+    [ -n "$profile" ] || profile="map"
+  fi
+  local container; container="$(require_container)"
+  echo "[recover] profil='${profile}' conteneur='${container}'"
+  # 1. evo_ws : (re)mettre les sources + builder seulement si l'install manque.
+  if _ssh "docker exec ${container} test -d ${DOCKER_WS}/install"; then
+    echo "[recover] evo_ws déjà buildé — build sauté (utilise 'setup' pour forcer)"
+  else
+    ensure_evo_ws "$container"
+    echo "[recover] colcon build dans Docker (${container})"
+    local build; build="$(_ros_prelude); cd ${DOCKER_WS} && colcon build --symlink-install"
+    _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS} ${container} bash -lc \"${build}\""
+  fi
+  # 2. stack
+  cmd_start "$profile"
+  # 3. MCU
+  cmd_mcu
+  # 4. état final
+  echo; cmd_status
+}
+
 cmd_status() {
   local container; container="$(resolve_container)"
   echo "== Cible =="
@@ -112,6 +212,13 @@ cmd_status() {
   echo
   echo "== Topics ROS =="
   _ssh "docker exec ${container} bash -lc '$(_ros_prelude); ros2 topic list 2>/dev/null | grep -E \"/scan|/odom|/cmd_vel|/camera/color/image_raw\" || echo \"(aucun topic clé)\"'"
+  echo
+  echo "== Carte (MCU micro-ROS) =="
+  if mcu_is_alive "$container"; then
+    echo "  flux ${MCU_PROBE_TOPIC} : OUI (carte vivante)"
+  else
+    echo "  flux ${MCU_PROBE_TOPIC} : MUET — lance ./robot.sh mcu pour réveiller la carte"
+  fi
   echo
   echo "== Ports (accessibilité depuis ce poste) =="
   # On teste depuis le Mac : c'est l'accès réel qui compte pour le dashboard, et
@@ -172,10 +279,13 @@ cmd_config() {
 # --- Dispatch ----------------------------------------------------------------
 
 case "${1:-}" in
+  recover)          shift; cmd_recover "$@" ;;
   setup)            shift; cmd_setup "$@" ;;
+  pull)             shift; cmd_pull "$@" ;;
   start)            shift; cmd_start "$@" ;;
   stop)             shift; cmd_stop "$@" ;;
   restart)          shift; cmd_restart "$@" ;;
+  mcu)              shift; cmd_mcu "$@" ;;
   status)           shift; cmd_status "$@" ;;
   health)           shift; cmd_health "$@" ;;
   logs)             shift; cmd_logs "$@" ;;
