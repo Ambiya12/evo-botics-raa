@@ -37,7 +37,7 @@ Route::get('/reservation', Reservation::class)->middleware(['auth', 'verified'])
 Route::middleware(['auth', 'verified', 'not-admin'])->group(function () {
     Route::get('/dashboard', function () {
         return Inertia::render('Dashboard', [
-            'reservations' => auth()->user()->reservations()->with('bookingSession.room')->get(),
+            'reservations' => auth()->user()->reservations()->with('bookingSession.room')->latest()->get(),
         ]);
         Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
         Route::post('/sessions/book', [BookingSessionController::class, 'bookSession']);
