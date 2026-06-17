@@ -30,11 +30,11 @@ Current owned packages:
 
 - `evo_navigation`: SLAM, Nav2, exploration, RViz config, and command safety gate.
 - `evo_web`: rosbridge launch and camera HTTP bridge for `/camera/stream` and `/camera/snapshot`.
+- `evo_vision`: robot-camera QR scanning, depth obstacle scan publishing, and object detection scaffold.
 
 Likely future packages:
 
 - `evo_interfaces`: custom messages/actions/services for reservations, guide state, and safety status.
-- `evo_vision`: QR scanning, object detection, and camera obstacle layer.
 - `evo_reception`: visitor flow, reservation validation bridge, and waypoint orchestration.
 - `evo_voice`: STT/TTS/translation pipeline.
 - `evo_bringup`: one-command launch composition once nav, web, vision, and reception are stable.
@@ -59,7 +59,7 @@ ssh jetson@10.10.221.115
 ```
 
 ```bash
-CONTAINER=m3pro
+CONTAINER=blissful_goldstine
 HOST_WS=/home/jetson/evo_ws
 DOCKER_WS=/root/evo_ws
 
@@ -80,6 +80,112 @@ docker exec -it \
 ```
 
 Use this again whenever `evo_ws/src` changes.
+
+If QR scanning reports that OpenCV was built without QUIRC, install the zbar decoder dependency inside Docker once:
+
+```bash
+docker exec -it m3pro bash -lc '
+  apt-get update
+  apt-get install -y libzbar0 python3-pyzbar
+'
+```
+
+## Optional: Start The Repeated Terminals With Tmux
+
+For normal development and demos, use tmux so you do not have to open every terminal manually.
+Each long-running process still gets its own tmux window, so logs stay readable.
+
+Install tmux once if needed:
+
+```bash
+# Mac
+brew install tmux
+
+# Jetson
+sudo apt-get install -y tmux
+```
+
+Start the robot-side ROS processes from the Mac:
+
+```bash
+./scripts/dev/start_robot_tmux.sh
+```
+
+This creates a remote Jetson tmux session named `evo-robot` with windows for:
+
+- `bringup`
+- `camera`
+- `vision`
+- `web`
+
+For mapping mode:
+
+```bash
+./scripts/dev/start_create_map_tmux.sh
+```
+
+This creates a remote Jetson tmux session named `evo-create-map` with windows for:
+
+- `bringup`
+- `camera`
+- `slam`
+- `web`
+
+For saved-map navigation:
+
+```bash
+./scripts/dev/start_saved_map_tmux.sh
+```
+
+This creates a remote Jetson tmux session named `evo-saved-map` with windows for:
+
+- `bringup`
+- `camera`
+- `nav`
+- `web`
+
+The saved-map script uses `/root/maps/admin_map.yaml` by default. To use another map:
+
+```bash
+MAP_PATH=/root/maps/demo_map.yaml ./scripts/dev/start_saved_map_tmux.sh
+```
+
+Every Docker tmux window sources the ROS setup first:
+
+```bash
+source /opt/ros/humble/setup.bash
+source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true
+source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true
+source /root/evo_ws/install/setup.bash
+export ROS_DOMAIN_ID=30
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+```
+
+Start the admin dashboard processes on the Mac:
+
+```bash
+./scripts/dev/start_dashboard_tmux.sh
+```
+
+This creates a local tmux session named `evo-dashboard` with windows for:
+
+- `laravel`
+- `vite`
+
+Useful tmux keys:
+
+```text
+Ctrl-b then n  next window
+Ctrl-b then p  previous window
+Ctrl-b then d  detach without stopping processes
+```
+
+Reattach later:
+
+```bash
+ssh jetson@10.10.221.115 -t tmux attach-session -t evo-robot
+tmux attach-session -t evo-dashboard
+```
 
 ## 3. Open A ROS Shell
 
@@ -179,14 +285,54 @@ Camera Port: 8080
 Camera Path: /camera/stream
 ```
 
-## 6. Start Rosbridge And The Camera Web Server
+## 6. Start Vision Perception
 
 Terminal 3, inside Docker:
 
 ```bash
+ros2 launch evo_vision vision.launch.py \
+  camera_topic:=/camera/color/image_raw \
+  depth_topic:=/camera/depth/image_raw \
+  qr_decoder_backend:=auto
+```
+
+This starts QR scanning and publishes a conservative depth-camera scan. It does not change Nav2 behavior by default.
+
+If `/vision/qr/status` shows `"selected_backend": null`, the robot container is missing a QR decoder. Install `libzbar0 python3-pyzbar` in Docker, rebuild/source `evo_ws`, then launch vision again.
+
+QR smoke test:
+
+```bash
+ros2 topic echo /vision/qr/detections
+```
+
+Show a reservation QR code to the robot camera. The topic should publish decoded JSON. `reservationApp` owns QR generation and validation; `evo_vision` only scans and publishes what it sees.
+
+Depth smoke test:
+
+```bash
+ros2 topic echo /vision/obstacles/scan --once
+```
+
+Move an object in front of the depth camera and re-run the command. Some ranges should become shorter.
+
+Object detection is scaffolded but disabled until a model is selected:
+
+```bash
+ros2 launch evo_vision vision.launch.py enable_object_detection:=true
+```
+
+## 7. Start Rosbridge And The Camera Web Server
+
+Terminal 4, inside Docker:
+
+```bash
 ros2 launch evo_web web_dashboard.launch.py \
   port:=8080 \
-  camera_topic:=/camera/color/image_raw
+  camera_topic:=/camera/color/image_raw \
+  camera_max_fps:=8.0 \
+  camera_max_width:=640 \
+  camera_jpeg_quality:=60
 ```
 
 If port `9090` is already used, keep the existing rosbridge and start only the web server:
@@ -195,7 +341,10 @@ If port `9090` is already used, keep the existing rosbridge and start only the w
 ros2 launch evo_web web_dashboard.launch.py \
   rosbridge:=false \
   port:=8080 \
-  camera_topic:=/camera/color/image_raw
+  camera_topic:=/camera/color/image_raw \
+  camera_max_fps:=8.0 \
+  camera_max_width:=640 \
+  camera_jpeg_quality:=60
 ```
 
 Check:
@@ -205,7 +354,7 @@ ss -ltnp | grep -E ':8080|:9090'
 curl -I http://127.0.0.1:8080/camera/stream
 ```
 
-## 7. Start The Admin Dashboard
+## 8. Start The Admin Dashboard
 
 On the Mac:
 
@@ -237,7 +386,7 @@ Camera Path: /camera/stream
 Save Map Path: /root/maps/admin_map
 ```
 
-## 8. Create A New Map
+## 9. Create A New Map
 
 Use this when you want to drive the robot and build a map.
 
@@ -278,7 +427,7 @@ Expected files:
 /root/maps/admin_map.pgm
 ```
 
-## 9. Navigate With A Saved Map
+## 10. Navigate With A Saved Map
 
 Use this when `/root/maps/admin_map.yaml` already exists in Docker.
 
@@ -306,18 +455,18 @@ ros2 launch evo_web web_dashboard.launch.py \
 
 Before sending Nav2 goals, set the initial pose in the dashboard so the robot marker matches the real robot.
 
-## 10. Copy An Existing Map Into Docker
+## 11. Copy An Existing Map Into Docker
 
 If the map is on the Jetson host in `~/maps_backup`, copy it into Docker:
 
 ```bash
-ssh jetson@10.10.221.115
-CONTAINER=m3pro
+ssh jetson@10.10.220.225
+CONTAINER=blissful_goldstine
 docker exec "$CONTAINER" mkdir -p /root/maps
-docker cp ~/maps_backup/demo_map.yaml "$CONTAINER":/root/maps/demo_map.yaml
-docker cp ~/maps_backup/demo_map.pgm "$CONTAINER":/root/maps/demo_map.pgm
-docker exec "$CONTAINER" sh -lc "cd /root/maps && sed -i 's#^image:.*#image: demo_map.pgm#' demo_map.yaml"
-docker exec "$CONTAINER" ls -la /root/maps/demo_map.*
+docker cp ~/maps_backup/admin_map.yaml "$CONTAINER":/root/maps/admin_map.yaml
+docker cp ~/maps_backup/admin_map.pgm "$CONTAINER":/root/maps/admin_map.pgm
+docker exec "$CONTAINER" sh -lc "cd /root/maps && sed -i 's#^image:.*#image: admin_map.pgm#' admin_map.yaml"
+docker exec "$CONTAINER" ls -la /root/maps/admin_map.*
 ```
 
 Then launch navigation with:
@@ -328,7 +477,7 @@ ros2 launch evo_navigation navigation.launch.py \
   rviz:=false
 ```
 
-## 11. Minimal Debug Checklist
+## 12. Minimal Debug Checklist
 
 Run these inside Docker after sourcing the ROS setup.
 
@@ -354,11 +503,13 @@ ros2 topic echo /amcl_pose --once
 ros2 run tf2_ros tf2_echo map base_footprint
 ```
 
-Camera:
+Camera and vision:
 
 ```bash
 ros2 topic list -t | grep -E '/camera/(color|depth)'
 ros2 topic hz /camera/color/image_raw
+ros2 topic echo /vision/qr/status --once
+ros2 topic echo /vision/obstacles/scan --once
 curl -I http://127.0.0.1:8080/camera/stream
 ```
 
@@ -370,9 +521,11 @@ ss -ltnp | grep -E ':8080|:9090'
 
 ## Important Notes
 
-- Keep each ROS launch running in its own terminal.
+- Keep each ROS launch running in its own terminal or tmux window.
 - Treat `docs/m3pro_teacher_ws ` as reference material only. Do not launch `m3pro_teacher_*` packages for the Evo-Botics workflow.
 - If you stop the camera launch, `/camera/color/image_raw` disappears and `/camera/stream` has no frames.
 - If the Jetson host sees `/dev/video*` but Docker does not, the container was started without access to the camera device. Restart the robot Docker stack with USB/video device access, then launch the camera again.
+- If the camera stream is delayed, keep the HTTP bridge at `camera_max_width:=640`, `camera_max_fps:=8.0`, and `camera_jpeg_quality:=60`; native-resolution MJPEG is much heavier on the Jetson.
+- If `evo_vision` logs `Library QUIRC is not linked`, install `libzbar0 python3-pyzbar` in Docker and use the default `qr_decoder_backend:=auto`.
 - If rosbridge is already running on `9090`, use `rosbridge:=false` for `web_dashboard.launch.py`.
 - The deploy script syncs `evo_ws/src` from this repository to the Jetson host workspace.
