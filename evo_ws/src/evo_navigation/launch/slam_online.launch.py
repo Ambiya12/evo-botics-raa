@@ -8,6 +8,7 @@ Prerequisites: Yahboom bringup must already be running. The bringup provides:
 
 This launch file starts:
   - slam_toolbox in online_async mode (consumes /scan_multi)
+  - cmd_vel_safety_gate for browser teleop (/cmd_vel_teleop -> /cmd_vel)
   - rviz2 (optional)
 
 NOTE: We do NOT launch robot_state_publisher or any scan merger here because
@@ -45,6 +46,15 @@ def generate_launch_description():
                 slam_params,
                 {"use_sim_time": LaunchConfiguration("use_sim_time")},
             ],
+            output="screen",
+        ),
+
+        # --- Final command gate / latched emergency stop ---
+        Node(
+            package="evo_navigation",
+            executable="cmd_vel_safety_gate",
+            name="cmd_vel_safety_gate",
+            parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
             output="screen",
         ),
 
