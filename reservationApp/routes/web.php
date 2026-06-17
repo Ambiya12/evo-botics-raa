@@ -44,6 +44,7 @@ Route::middleware(['auth', 'verified', 'not-admin'])->group(function () {
     })->name('dashboard');
 
     Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+    Route::post('/sessions/book', [BookingSessionController::class, 'bookSession']);
 });
 
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {

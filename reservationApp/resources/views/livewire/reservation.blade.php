@@ -6,45 +6,68 @@
     @endphp
 
     <script>
-        window.reservationForm = () => ({
-            t: @json($__t),
-            locale: '{{ $__locale }}',
-            month: new Date().getMonth(),
-            year: new Date().getFullYear(),
-            localName: '',
-            localEmail: '',
-            localDate: '',
-            localStartTime: '',
-            localEndTime: '',
-            localPeople: 1,
-            showTimePicker: false,
-            nameError: '',
-            emailError: '',
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('reservationForm', () => ({
+                t: @json($__t),
+                locale: '{{ $__locale }}',
+                month: new Date().getMonth(),
+                year: new Date().getFullYear(),
+                localDate: '',
+                localStartTime: '',
+                localEndTime: '',
+                localPeople: 1,
+                showTimePicker: false,
+                step: 'form',
+                roomFound: false,
+                resultMessage: '',
 
-            validate() {
-                let valid = true;
-                this.nameError = '';
-                this.emailError = '';
-                if (!this.localName || this.localName.trim().length < 2) {
-                    this.nameError = this.t['Please enter a valid name (at least 2 characters).'] || 'Please enter a valid name (at least 2 characters).';
-                    valid = false;
-                } else if (/[=<>&'\x22]/.test(this.localName)) {
-                    this.nameError = this.t['Name contains invalid characters.'] || 'Name contains invalid characters.';
-                    valid = false;
-                }
-                if (!this.localEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.localEmail)) {
-                    this.emailError = this.t['Please enter a valid email address.'] || 'Please enter a valid email address.';
-                    valid = false;
-                }
-                return valid;
-            },
-            async book() {
-                if (!this.validate()) return;
-                await this.$wire.reserve();
-                setTimeout(async () => {
-                    await this.$wire.checkAvailability();
-                }, 3000);
-            },
+                async book() {
+                    this.step = 'checking'; 
+
+                    try {
+                        const response = await fetch('/sessions/book', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                            },
+                            body: JSON.stringify({
+                                date: this.localDate,
+                                start_at: this.localStartTime,
+                                end_at: this.localEndTime,
+                                attendee_count: this.localPeople,
+                                customer_name: '{{ auth()->user()->name }}',
+                                customer_email: '{{ auth()->user()->email }}'
+                            })
+                        });
+
+                        const result = await response.json();
+
+                        if (response.ok) {
+                            this.roomFound = true;
+                            this.resultMessage = result.message;
+                        } else {
+                            this.roomFound = false;
+                            this.resultMessage = result.message;
+                        }
+                    } catch (error) {
+                        this.roomFound = false;
+                        this.resultMessage = "Une erreur technique est survenue.";
+                    }
+
+                    this.step = 'result';
+                },
+
+                resetForm() {
+                    this.localDate = '';
+                    this.localStartTime = '';
+                    this.localEndTime = '';
+                    this.localPeople = 1;
+                    this.roomFound = false;
+                    this.resultMessage = '';
+                    this.step = 'form';
+                },
 
             daysInMonth() {
                 return new Date(this.year, this.month + 1, 0).getDate();
@@ -193,87 +216,82 @@
         </div>
     </header>
 
-    <main>
+    <main x-data="reservationForm">
         <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-            <div class="grid grid-cols-1 gap-8 lg:grid-cols-3"
-                 x-data="{
-                    ...reservationForm(),
-                    step: @entangle('step'),
-                    roomFound: @entangle('roomFound'),
-                    resultMessage: @entangle('resultMessage'),
-                 }">
+            <div x-show="step === 'form'" class="grid grid-cols-1 gap-8 lg:grid-cols-3">
 
-                <div class="lg:col-span-2" x-show="step === 'form'" x-cloak>
-                    <h2 class="mb-4 text-xl font-bold">{{ __('1. Pick a date') }}</h2>
-                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                        <div class="mb-4 flex items-center justify-between">
-                            <button @click="prevMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&larr;</button>
-                            <span class="text-lg font-semibold capitalize" x-text="monthName() + ' ' + year"></span>
-                            <button @click="nextMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&rarr;</button>
+                    <div class="lg:col-span-2">
+                        <h2 class="mb-4 text-xl font-bold">{{ __('1. Pick a date') }}</h2>
+                        <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
+                            <div class="mb-4 flex items-center justify-between">
+                                <button @click="prevMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&larr;</button>
+                                <span class="text-lg font-semibold capitalize" x-text="monthName + ' ' + year"></span>
+                                <button @click="nextMonth()" class="rounded p-2 text-xl hover:bg-gray-100">&rarr;</button>
+                            </div>
+
+                            <div class="grid grid-cols-7 gap-1 text-center text-sm font-medium text-gray-500">
+                                <template x-for="day in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="day">
+                                    <div class="py-1" x-text="t[day] || day"></div>
+                                </template>
+                            </div>
+
+                            <div class="mt-1 grid grid-cols-7 gap-1 text-center">
+                                <template x-for="blank in firstDay" :key="'b' + blank">
+                                    <div></div>
+                                </template>
+                                <template x-for="day in daysInMonth" :key="day">
+                                    <button @click="selectDate(day)"
+                                            :disabled="isPast(day)"
+                                            :class="{
+                                                'bg-blue-600 text-white': localDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+                                                'text-gray-300 cursor-not-allowed': isPast(day),
+                                                'hover:bg-gray-100': !isPast(day)
+                                            }"
+                                            class="rounded p-2 text-sm transition"
+                                            x-text="day">
+                                    </button>
+                                </template>
+                            </div>
                         </div>
 
-                        <div class="grid grid-cols-7 gap-1 text-center text-sm font-medium text-gray-500">
-                            <template x-for="day in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']" :key="day">
-                                <div class="py-1" x-text="t[day] || day"></div>
-                            </template>
+                        <div class="mt-6 overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
+                            <h2 class="mb-4 text-xl font-bold">{{ __('2. Pick a time') }}</h2>
+                            <p class="mb-3 text-gray-600" x-show="localStartTime && localEndTime" x-text="localStartTime + ' — ' + localEndTime"></p>
+                            <p class="mb-3 text-gray-600" x-show="!localDate">{{ __('Pick start time first') }}</p>
+                            <button @click="showTimePicker = true"
+                                    :disabled="!localDate"
+                                    :class="localDate ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
+                                    class="rounded-md px-6 py-3 text-white transition">
+                                {{ __('Choose a time slot') }}
+                            </button>
                         </div>
 
-                        <div class="mt-1 grid grid-cols-7 gap-1 text-center">
-                            <template x-for="blank in firstDay()" :key="'b' + blank">
-                                <div></div>
-                            </template>
-                            <template x-for="day in daysInMonth()" :key="day">
-                                <button @click="selectDate(day)"
-                                        :disabled="isPast(day)"
-                                        :class="{
-                                            'bg-blue-600 text-white': localDate === `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-                                            'text-gray-300 cursor-not-allowed': isPast(day),
-                                            'hover:bg-gray-100': !isPast(day)
-                                        }"
-                                        class="rounded p-2 text-sm transition"
-                                        x-text="day">
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-
-                    <div class="mt-6 overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                        <h2 class="mb-4 text-xl font-bold">{{ __('2. Pick a time') }}</h2>
-                        <p class="mb-3 text-gray-600" x-show="localStartTime && localEndTime" x-text="localStartTime + ' — ' + localEndTime"></p>
-                        <p class="mb-3 text-gray-600" x-show="!localDate">{{ __('Pick start time first') }}</p>
-                        <button @click="showTimePicker = true"
-                                :disabled="!localDate"
-                                :class="localDate ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
-                                class="rounded-md px-6 py-3 text-white transition">
-                            {{ __('Choose a time slot') }}
-                        </button>
-                    </div>
-
-                    <div x-show="showTimePicker"
-                         @click.away="showTimePicker = false"
-                         class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-                         style="display: none;">
-                        <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl">
-                            <h2 class="mb-4 text-xl font-bold">{{ __('Choose your time slot') }}</h2>
-                            <div class="grid grid-cols-2 gap-6">
-                                <div>
-                                    <p class="mb-2 text-sm font-semibold text-gray-500">{{ __('Start') }}</p>
-                                    <div class="space-y-1">
-                                        <template x-for="hour in Array.from({length: 11}, (_, i) => i + 9)" :key="'s'+hour">
-                                            <button @click="selectStartTime(hour)"
-                                                    :class="localStartTime === String(hour).padStart(2, '0') + ':00' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
-                                                    class="w-full rounded-lg px-4 py-2 text-center font-medium transition">
-                                                <span x-text="String(hour).padStart(2, '0') + ':00'"></span>
-                                            </button>
-                                        </template>
+                        <div x-show="showTimePicker"
+                            @click.away="showTimePicker = false"
+                            class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+                            style="display: none;">
+                            <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl max-h-[90vh] flex flex-col">
+                                <h2 class="mb-4 text-xl font-bold">{{ __('Choose your time slot') }}</h2>
+                                <div class="grid grid-cols-2 gap-6 overflow-y-auto pr-2 py-2 grow">
+                                    <div>
+                                        <p class="mb-2 text-sm font-semibold text-gray-500">{{ __('Start') }}</p>
+                                        <div class="space-y-1">
+                                            <template x-for="hour in Array.from({length: 11}, (_, i) => i + 9)" :key="'s'+hour">
+                                                <button @click="selectStartTime(hour)"
+                                                        :class="localStartTime === String(hour).padStart(2, '0') + ':00' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
+                                                        class="w-full rounded-lg px-4 py-2 text-center font-medium transition">
+                                                    <span x-text="String(hour).padStart(2, '0') + ':00'"></span>
+                                                </button>
+                                            </template>
+                                        </div>
                                     </div>
-                                </div>
-                                <div>
-                                    <p class="mb-2 text-sm font-semibold text-gray-500">{{ __('End') }}</p>
-                                    <div class="space-y-1">
-                                        <p x-show="!localStartTime" class="text-sm text-gray-400">{{ __('Pick start time first') }}</p>
-                                        <div x-show="localStartTime" class="space-y-1">
-                                            <template x-for="hour in endTimeOptions()" :key="'e'+hour">
+                                    <div>
+                                        <p class="mb-2 text-sm font-semibold text-gray-500">{{ __('End') }}</p>
+                                        <div class="space-y-1">
+                                            <template x-if="!localStartTime">
+                                                <p class="text-sm text-gray-400">{{ __('Pick start time first') }}</p>
+                                            </template>
+                                            <template x-for="hour in endTimeOptions" :key="'e'+hour">
                                                 <button @click="selectEndTime(hour)"
                                                         :class="localEndTime === String(hour).padStart(2, '0') + ':00' ? 'bg-blue-600 text-white' : 'bg-gray-100 hover:bg-gray-200'"
                                                         class="w-full rounded-lg px-4 py-2 text-center font-medium transition">
@@ -283,78 +301,51 @@
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                            <button @click="showTimePicker = false"
-                                    class="mt-4 w-full rounded-lg bg-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-300">
-                                {{ __('Close') }}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="space-y-6" x-show="step === 'form'" x-cloak>
-                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                        <h2 class="mb-4 text-xl font-bold">{{ __('Your information') }}</h2>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">{{ __('Name') }}</label>
-                                <input type="text" x-model="localName" @input="syncName(); nameError = ''"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                       :class="nameError ? 'border-red-500' : ''">
-                                <p x-show="nameError" x-text="nameError" class="mt-1 text-sm text-red-600"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-700">{{ __('Email') }}</label>
-                                <input type="email" x-model="localEmail" @input="syncEmail(); emailError = ''"
-                                       class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                                       :class="emailError ? 'border-red-500' : ''">
-                                <p x-show="emailError" x-text="emailError" class="mt-1 text-sm text-red-600"></p>
+                                <button @click="showTimePicker = false"
+                                        class="mt-4 w-full rounded-lg bg-gray-200 px-4 py-2 text-gray-700 hover:bg-gray-300">
+                                    {{ __('Close') }}
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                        <h2 class="mb-4 text-xl font-bold">{{ __('Summary') }}</h2>
-                        <div class="space-y-3">
-                            <div>
-                                <span class="text-sm text-gray-500">{{ __('Name') }}</span>
-                                <p class="text-lg font-semibold" x-text="localName || '-'"></p>
-                            </div>
-                            <div>
-                                <span class="text-sm text-gray-500">{{ __('Email') }}</span>
-                                <p class="text-lg font-semibold" x-text="localEmail || '-'"></p>
-                            </div>
-                            <div>
-                                <span class="text-sm text-gray-500">{{ __('Date') }}</span>
-                                <p class="text-lg font-semibold" x-text="formattedDate()"></p>
-                            </div>
-                            <div>
-                                <span class="text-sm text-gray-500">{{ __('Time') }}</span>
-                                <p class="text-lg font-semibold" x-text="localStartTime && localEndTime ? localStartTime + ' — ' + localEndTime : '-'"></p>
-                            </div>
-                            <div>
-                                <span class="text-sm text-gray-500">{{ __('Guests') }}</span>
-                                <p class="text-lg font-semibold" x-text="localPeople"></p>
-                            </div>
+                    <div class="space-y-6">
+                        <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
+                            <h2 class="mb-4 text-xl font-bold">{{ __('Number of guests (max 30)') }}</h2>
+                            <input type="number" x-model="localPeople" @input="updatePeople(localPeople)"
+                                min="1" max="30"
+                                class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
+                        <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
+                            <h2 class="mb-4 text-xl font-bold">{{ __('Summary') }}</h2>
+                                <div class="space-y-3">
+                                    <div>
+                                        <span class="text-sm text-gray-500">{{ __('Date') }}</span>
+                                        <p class="text-lg font-semibold" x-text="formattedDate"></p>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">{{ __('Time') }}</span>
+                                        <p class="text-lg font-semibold" x-text="localStartTime && localEndTime ? localStartTime + ' — ' + localEndTime : '-'"></p>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">{{ __('Guests') }}</span>
+                                        <p class="text-lg font-semibold" x-text="localPeople"></p>
+                                    </div>
+                                </div>
+                        </div>
+
+                        <button @click="book()"
+                                    :disabled="!localDate || !localStartTime || !localEndTime"
+                                    :class="localDate && localStartTime && localEndTime ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
+                                    class="w-full rounded-md px-4 py-4 text-xl font-bold text-white transition">
+                                {{ __('Book now') }}
+                        </button>
                     </div>
+            </div>
 
-                    <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                        <h2 class="mb-4 text-xl font-bold">{{ __('Number of guests (max 30)') }}</h2>
-                        <input type="number" x-model="localPeople" @input="updatePeople(localPeople)"
-                               min="1" max="30"
-                               class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                    </div>
+            <div x-show="step === 'checking'">
 
-                    <button @click="book()"
-                            :disabled="!localName || !localEmail || !localDate || !localStartTime || !localEndTime"
-                            :class="localName && localEmail && localDate && localStartTime && localEndTime ? 'bg-blue-600 hover:bg-blue-700 cursor-pointer' : 'bg-gray-300 cursor-not-allowed'"
-                            class="w-full rounded-md px-4 py-4 text-xl font-bold text-white transition">
-                        {{ __('Book now') }}
-                    </button>
-                </div>
-
-                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32" x-show="step === 'checking'" x-cloak>
+                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32">
                     <svg class="size-20 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -362,25 +353,29 @@
                     <h2 class="mt-6 text-2xl font-semibold text-gray-900">{{ __('Checking availability...') }}</h2>
                     <p class="mt-2 text-gray-500">{{ __('We are looking for an available room, please wait.') }}</p>
                 </div>
+            </div>
 
-                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32" x-show="step === 'result'" x-cloak>
-                    <template x-if="roomFound">
+            <div x-show="step === 'result'">
+
+                <div class="lg:col-span-3 flex flex-col items-center justify-center py-32">
+                    <div x-show="roomFound">
                         <svg class="size-24 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                    </template>
-                    <template x-if="!roomFound">
+                    </div>
+                    <div x-show="!roomFound">
                         <svg class="size-24 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                         </svg>
-                    </template>
+                    </div>
 
-                    <h2 class="mt-6 text-2xl font-semibold" :class="roomFound ? 'text-green-700' : 'text-red-700'"
-                        x-text="roomFound ? (t['Room found!'] || 'Room found!') : (t['No room available'] || 'No room available')">
+                    <h2 class="mt-6 text-2xl font-semibold"
+                        :class="roomFound ? 'text-green-700' : 'text-red-700'"
+                        x-text="roomFound ? t['Room found!'] || 'Room found!' : t['No room available'] || 'No room available'">
                     </h2>
                     <p class="mt-2 max-w-md text-center text-gray-600" x-text="resultMessage"></p>
 
-                    <button @click="resetForm()"
+                    <button wire:click="resetForm"
                             class="mt-8 rounded-md bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
                         {{ __('Make another reservation') }}
                     </button>

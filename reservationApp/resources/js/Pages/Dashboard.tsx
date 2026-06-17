@@ -72,7 +72,9 @@ export default function Dashboard() {
                                             <div>
                                                 <div className="flex items-center gap-3">
                                                     <p className="text-base font-semibold text-gray-900">
-                                                        {item.booking_session?.date || t('No date')}
+                                                        {item.booking_session?.date
+                                                            ? item.booking_session.date.split('T')[0]
+                                                            : t('No date')}
                                                     </p>
                                                     <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${item.status === 'confirmed' ? 'bg-green-110 text-green-700' :
                                                         item.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
