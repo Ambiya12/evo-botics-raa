@@ -13,10 +13,11 @@ reservationApp/bridge/
 evo_ws/build/
 evo_ws/install/
 evo_ws/log/
-__pycache__/
-*.pyc
+evo_ws/src/**/__pycache__/
+evo_ws/src/**/*.egg-info/
+evo_ws/src/**/.pytest_cache/
 
-# Scripts robot : config locale et état (IP DHCP, conteneur, dernier profil)
+# Robot launcher local config (IP/profil spécifiques à la machine)
 scripts/robot/config.local.sh
 scripts/robot/.last_profile
 

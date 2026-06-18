@@ -2,15 +2,14 @@
 <package format="3">
   <name>evo_screen</name>
   <version>0.1.0</version>
-  <description>Mirror of /reception/qr/status on the HDMI LCD (kiosk screens).</description>
+  <description>Affiche la page web /kiosk en plein écran (chromium) sur le LCD du robot.</description>
   <maintainer email="evobotics@example.com">Evo-Botics</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>std_msgs</exec_depend>
-  <!-- Pillow, numpy et python3-opencv (GUI) sont fournis par l'image du conteneur m3pro. -->
+  <!-- chromium-browser est une dépendance système runtime (présent sur le Jetson). -->
 
   <test_depend>python3-pytest</test_depend>
 
