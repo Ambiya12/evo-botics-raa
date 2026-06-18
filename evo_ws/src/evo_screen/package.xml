@@ -2,14 +2,14 @@
 <package format="3">
   <name>evo_screen</name>
   <version>0.1.0</version>
-  <description>Fullscreen Welcome splash on the HDMI LCD via a ROS2 service.</description>
+  <description>Mirror of /reception/qr/status on the HDMI LCD (kiosk screens).</description>
   <maintainer email="evobotics@example.com">Evo-Botics</maintainer>
   <license>MIT</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>std_srvs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <!-- Pillow, numpy et python3-opencv (GUI) sont fournis par l'image du conteneur m3pro. -->
 
   <test_depend>python3-pytest</test_depend>

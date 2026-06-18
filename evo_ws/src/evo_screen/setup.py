@@ -18,7 +18,7 @@ setup(
     zip_safe=True,
     maintainer="Evo-Botics",
     maintainer_email="evobotics@example.com",
-    description="Fullscreen Welcome splash on the HDMI LCD via a ROS2 service.",
+    description="Mirror of /reception/qr/status on the HDMI LCD (kiosk screens).",
     license="MIT",
     tests_require=["pytest"],
     entry_points={
