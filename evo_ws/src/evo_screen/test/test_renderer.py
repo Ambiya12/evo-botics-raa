@@ -1,6 +1,6 @@
 from evo_screen.lcd_renderer import (
     render_welcome, render_validating, render_success, render_error, render_guide,
-    WHITE, GREEN_BG, RED_BG,
+    WHITE, GREEN_BG, RED_BG, _reservation_line,
 )
 
 
@@ -70,3 +70,20 @@ def test_guide_white_bg_and_content():
     assert img.size == (1024, 600)
     assert img.getpixel((0, 0)) == WHITE
     assert _count_non_bg(img, WHITE) > 0
+
+
+# --- _reservation_line helper ---
+def test_reservation_line_includes_room():
+    line = _reservation_line({"customer_name": "Jules", "room": "A2",
+                              "date": "2026-06-18", "start_at": "14:00", "end_at": "15:00"})
+    assert "Jules" in line
+    assert "A2" in line
+    assert "14:00" in line and "15:00" in line
+
+
+def test_reservation_line_omits_missing_fields():
+    assert _reservation_line({"customer_name": "Jules"}) == "Jules"
+
+
+def test_reservation_line_empty_reservation():
+    assert _reservation_line({}) == ""

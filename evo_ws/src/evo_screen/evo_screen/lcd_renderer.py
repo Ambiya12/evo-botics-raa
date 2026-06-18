@@ -64,6 +64,18 @@ def _arrow(draw, cx, cy, size, fill):
     draw.line([(int(cx + size * 0.4), int(cy)), (int(cx + size * 0.1), int(cy + size * 0.3))], fill=fill, width=w)
 
 
+def _reservation_line(reservation: dict) -> str:
+    """Compose la ligne d'infos résa (best-effort, champs absents omis). Inclut `room`."""
+    head = [str(reservation.get(k)) for k in ("customer_name", "room", "date") if reservation.get(k)]
+    times = [str(reservation.get(k)) for k in ("start_at", "end_at") if reservation.get(k)]
+    parts = []
+    if head:
+        parts.append(" • ".join(head))
+    if times:
+        parts.append(" — ".join(times))
+    return "  ".join(parts)
+
+
 def render_welcome(width: int = 1024, height: int = 600, *,
                    font_path: str = DEFAULT_FONT_PATH, font_size: int = 96) -> Image.Image:
     image = Image.new("RGB", (width, height), WHITE)
@@ -104,12 +116,8 @@ def render_success(reservation: dict, width: int = 1024, height: int = 600, *,
          ("Your reservation has been successfully validated!", small)],
         width, height * 0.45, BLACK,
     )
-    fields = [reservation.get(k) for k in ("customer_name", "date", "start_at", "end_at")]
-    fields = [str(f) for f in fields if f]
-    if fields:
-        info = " • ".join(fields[:2])
-        if len(fields) > 2:
-            info += "  " + " — ".join(fields[2:])
+    info = _reservation_line(reservation)
+    if info:
         _draw_centered_text(draw, info, small, BLACK, width / 2, y + 20)
     return image
 
