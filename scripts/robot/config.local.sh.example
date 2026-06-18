@@ -1,0 +1,10 @@
+# Copier ce fichier en `config.local.sh` (gitignoré) pour surcharger la config locale.
+#   cp config.local.sh.example config.local.sh
+# Ou utiliser : ./robot.sh config ip 10.10.220.132  (écrit automatiquement ici)
+#
+# Utiliser la forme `: "${VAR:=valeur}"` pour qu'une variable d'environnement
+# passée à la volée reste prioritaire sur ce fichier.
+
+# : "${JETSON_IP:=10.10.220.132}"
+# : "${JETSON_USER:=jetson}"
+# : "${CONTAINER:=awesome_elion}"

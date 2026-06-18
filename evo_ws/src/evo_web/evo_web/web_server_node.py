@@ -11,6 +11,7 @@ Usage:
   ros2 run evo_web web_server_node --ros-args -p port:=8080
 """
 import io
+import time
 import threading
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
@@ -18,7 +19,7 @@ from pathlib import Path
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import Image
 from std_msgs.msg import UInt8MultiArray, MultiArrayDimension, String
 
@@ -80,7 +81,8 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def serve_snapshot(self):
-        jpeg = self.jpeg_getter() if self.jpeg_getter else None
+        frame = self.jpeg_getter() if self.jpeg_getter else None
+        jpeg = frame[1] if frame else None
         if jpeg is None:
             self.send_error(503, "No camera frame available yet")
             return
@@ -88,6 +90,7 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "image/jpeg")
         self.send_header("Content-Length", str(len(jpeg)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Pragma", "no-cache")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(jpeg)
@@ -96,20 +99,27 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("X-Accel-Buffering", "no")
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
+        last_seq = -1
         try:
             while True:
-                jpeg = self.jpeg_getter() if self.jpeg_getter else None
-                if jpeg is not None:
+                frame = self.jpeg_getter() if self.jpeg_getter else None
+                if frame is not None:
+                    seq, jpeg = frame
+                    if seq == last_seq:
+                        time.sleep(0.02)
+                        continue
+                    last_seq = seq
                     self.wfile.write(b"--frame\r\n")
                     self.wfile.write(b"Content-Type: image/jpeg\r\n")
                     self.wfile.write(f"Content-Length: {len(jpeg)}\r\n\r\n".encode())
                     self.wfile.write(jpeg)
                     self.wfile.write(b"\r\n")
                     self.wfile.flush()
-                import time
-                time.sleep(0.15)  # ~6 FPS to keep bandwidth low
+                time.sleep(0.02)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
@@ -124,9 +134,14 @@ class WebServerNode(Node):
         self.camera_topic = self.declare_parameter(
             "camera_topic", "/camera/color/image_raw"
         ).value
+        self.max_fps = float(self.declare_parameter("max_fps", 8.0).value)
+        self.max_width = int(self.declare_parameter("max_width", 640).value)
+        self.jpeg_quality = int(self.declare_parameter("jpeg_quality", 60).value)
 
         self.latest_jpeg = None
+        self.latest_jpeg_seq = 0
         self.jpeg_lock = threading.Lock()
+        self.last_encode_time = 0.0
 
         # Mic audio sink: publish each chunk as raw bytes on /evo/mic_chunks
         # and a short meta String on /evo/mic_meta (mime + sample rate).
@@ -135,11 +150,17 @@ class WebServerNode(Node):
         self._mic_chunk_count = 0
 
         if HAS_CV2:
+            sensor_qos = QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            )
             self.create_subscription(
-                Image, self.camera_topic, self.on_image, qos_profile_sensor_data,
+                Image, self.camera_topic, self.on_image, sensor_qos,
             )
             self.get_logger().info(
-                f"Subscribed to camera: {self.camera_topic} (sensor QoS)"
+                f"Subscribed to camera: {self.camera_topic} "
+                f"(max_fps={self.max_fps}, max_width={self.max_width}, quality={self.jpeg_quality})"
             )
         else:
             self.get_logger().warning(
@@ -164,6 +185,11 @@ class WebServerNode(Node):
     def on_image(self, msg: Image):
         """Convert ROS Image to JPEG and cache it."""
         try:
+            now = time.monotonic()
+            if self.max_fps > 0 and now - self.last_encode_time < 1.0 / self.max_fps:
+                return
+            self.last_encode_time = now
+
             encoding = msg.encoding.lower()
             h, w = msg.height, msg.width
             data = bytes(msg.data)
@@ -184,20 +210,23 @@ class WebServerNode(Node):
             else:
                 return
 
-            # Stream at native resolution so pixel clicks in the browser map
-            # 1:1 to the depth image. If bandwidth becomes an issue, downscale
-            # here AND have any click-based consumers scale the pixel
-            # coordinates back up to depth-image resolution.
+            if self.max_width > 0 and w > self.max_width:
+                scale = self.max_width / float(w)
+                arr = cv2.resize(arr, (self.max_width, int(h * scale)))
 
-            _, jpeg_buf = cv2.imencode(".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            quality = max(30, min(95, self.jpeg_quality))
+            _, jpeg_buf = cv2.imencode(".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, quality])
             with self.jpeg_lock:
                 self.latest_jpeg = jpeg_buf.tobytes()
+                self.latest_jpeg_seq += 1
         except Exception:
             pass
 
     def get_jpeg(self):
         with self.jpeg_lock:
-            return self.latest_jpeg
+            if self.latest_jpeg is None:
+                return None
+            return self.latest_jpeg_seq, self.latest_jpeg
 
     def on_mic_chunk(self, audio_bytes: bytes, mime: str, sample_rate: str) -> None:
         """Called from the HTTP handler thread whenever a mic chunk arrives."""

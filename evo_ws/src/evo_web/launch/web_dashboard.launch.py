@@ -30,6 +30,12 @@ def generate_launch_description():
         DeclareLaunchArgument("port", default_value="8080",
                               description="HTTP port for the dashboard"),
         DeclareLaunchArgument("camera_topic", default_value="/camera/color/image_raw"),
+        DeclareLaunchArgument("camera_max_fps", default_value="8.0",
+                              description="Maximum JPEG encode rate for the HTTP camera stream"),
+        DeclareLaunchArgument("camera_max_width", default_value="640",
+                              description="Maximum HTTP camera stream width; 0 keeps native width"),
+        DeclareLaunchArgument("camera_jpeg_quality", default_value="60",
+                              description="JPEG quality for the HTTP camera stream"),
         DeclareLaunchArgument("rosbridge", default_value="true",
                               description="Start rosbridge_websocket on :9090 (skip if explore.launch.py already runs it)"),
 
@@ -50,6 +56,9 @@ def generate_launch_description():
             parameters=[{
                 "port": ParameterValue(LaunchConfiguration("port"), value_type=int),
                 "camera_topic": LaunchConfiguration("camera_topic"),
+                "max_fps": ParameterValue(LaunchConfiguration("camera_max_fps"), value_type=float),
+                "max_width": ParameterValue(LaunchConfiguration("camera_max_width"), value_type=int),
+                "jpeg_quality": ParameterValue(LaunchConfiguration("camera_jpeg_quality"), value_type=int),
             }],
             output="screen",
         ),
