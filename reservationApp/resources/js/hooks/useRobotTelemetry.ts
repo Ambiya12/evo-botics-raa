@@ -73,9 +73,19 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
         }, { type: 'nav_msgs/msg/OccupancyGrid', throttleRate: 500 });
 
         const unsubscribeOdom = ros.subscribe('/odom', (message) => {
-            const nextPose = poseFromOdom(message);
+            const odomPose = poseFromOdom(message);
             markTopic('odom');
-            if (nextPose) setPose((current) => ({ ...nextPose, yaw: current?.yaw ?? nextPose.yaw }));
+            if (!odomPose) return;
+
+            // /odom is expressed in the odom frame, while the map canvas needs
+            // coordinates in the map frame. AMCL owns map-frame x/y/yaw.
+            // Only merge odometry velocities here; otherwise every odom update
+            // makes a valid AMCL pose jump back to unrelated odom coordinates.
+            setPose((current) => current ? {
+                ...current,
+                linearSpeed: odomPose.linearSpeed,
+                angularSpeed: odomPose.angularSpeed,
+            } : current);
         }, { type: 'nav_msgs/msg/Odometry', throttleRate: 150 });
 
         const unsubscribeAmclPose = ros.subscribe('/amcl_pose', (message) => {

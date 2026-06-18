@@ -11,7 +11,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # variable n'est pas déjà fixée par l'environnement -> env > local > défauts.
 [ -f "${SCRIPT_DIR}/config.local.sh" ] && . "${SCRIPT_DIR}/config.local.sh"
 
-: "${JETSON_IP:=10.10.221.115}"
+: "${JETSON_IP:=10.10.220.251}"
 : "${JETSON_USER:=jetson}"
 : "${CONTAINER:=auto}"          # "auto" = détection du conteneur actif sur le Jetson
 : "${ROS_DOMAIN_ID:=30}"

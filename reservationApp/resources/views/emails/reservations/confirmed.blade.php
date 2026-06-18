@@ -8,11 +8,11 @@ Your room is reserved for **{{ $reservation->bookingSession->date->format('Y/m/d
 - Time : {{ $reservation->bookingSession->start_at }} to {{ $reservation->bookingSession->end_at }}
 - Number of People : {{ $reservation->attendee_count }}
 
-	<div style="margin-top: 24px; text-align: center;">
-		<p style="color: #6b7280; font-size: 14px; margin-bottom: 12px;">Present this QR code at the kiosk to validate your reservation:</p>
-		<img src="{{ $message->embedData($qrCodePng, 'qrcode.png', 'image/png') }}" alt="QR Code" style="width: 200px; height: 200px;">
-		<p style="color: #9ca3af; font-size: 12px; margin-top: 8px;">If the image does not display, the QR code is also attached as a file.</p>
-	</div>
+<div style="text-align: center; margin: 24px 0;">
+    <p>Present this QR code to the robot kiosk when you arrive:</p>
+    <img src="{{ $qrCodeDataUri }}" alt="Reservation QR Code" width="220" height="220">
+</div>
+
 {{--
 <x-mail::button :url="config('app.url')">
 View my reservation

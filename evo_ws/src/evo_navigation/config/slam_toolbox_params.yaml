@@ -29,6 +29,10 @@ slam_toolbox:
     # Jetson Nano is CPU-bound. Give TF lookups room.
     transform_timeout: 1.5
     tf_buffer_duration: 30.0
+    # /scan_multi is ~7 Hz while TF can occasionally arrive > 0.14 s later
+    # under Foxglove + rosbridge load. slam_toolbox defaults this queue to 1,
+    # which makes every new scan evict the previous scan before TF is ready.
+    scan_queue_size: 20
 
     # ---------- thresholds for new scans ----------
     minimum_travel_distance: 0.3
