@@ -18,7 +18,8 @@ class KioskManager extends Component
 
         // Si on arrive sur "Result" ou "Guide", on déclenche un timer pour la suite
         if ($stepName === 'result') {
-            $this->dispatch('start-timer', nextStep: 'guide', delay: 5000); // 5 sec
+            $nextStep = $this->resultStatus === 'success' ? 'guide' : 'welcome';
+            $this->dispatch('start-timer', nextStep: $nextStep, delay: 5000); // 5 sec
         } elseif ($stepName === 'guide') {
             $this->dispatch('start-timer', nextStep: 'welcome', delay: 10000); // 10 sec
         }

@@ -44,43 +44,6 @@ class Reservation extends Component
         $this->step = 'checking';
     }
 
-    public function checkAvailability()
-    {
-        $this->roomFound = rand(1, 10) <= 7;
-
-        if ($this->roomFound) {
-            if (empty($this->email)) {
-                $this->resultMessage = __('No email address provided.');
-                $this->step = 'result';
-                return;
-            }
-
-            try {
-                Mail::to($this->email)->send(new ReservationConfirmation(
-                    name: $this->name,
-                    email: $this->email,
-                    date: $this->selectedDate,
-                    startTime: $this->selectedStartTime,
-                    endTime: $this->selectedEndTime,
-                    people: $this->peopleCount,
-                ));
-                $this->resultMessage = __('A room has been found for your reservation! You will receive your confirmation email. (Please check your spam folder if not received.)');
-            } catch (\Throwable $e) {
-                Log::error('Mail send failed: ' . $e->getMessage(), [
-                    'email' => $this->email,
-                    'host' => config('mail.mailers.smtp.host'),
-                    'port' => config('mail.mailers.smtp.port'),
-                    'user' => config('mail.mailers.smtp.username'),
-                ]);
-                $this->resultMessage = __('Room found but email could not be sent. Please contact support.');
-            }
-        } else {
-            $this->resultMessage = __('Sorry, no rooms are available for this time slot. Please try another time.');
-        }
-
-        $this->step = 'result';
-    }
-
     public function resetForm()
     {
         $this->reset(['name', 'email', 'selectedDate', 'selectedStartTime', 'selectedEndTime', 'peopleCount', 'step', 'roomFound', 'resultMessage']);
