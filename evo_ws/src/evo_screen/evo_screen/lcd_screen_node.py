@@ -57,11 +57,15 @@ class LcdScreenNode(Node):
     def _on_tick(self):
         if not self._state.active or self._adapter is None:
             return
-        if self._state.should_clear(self._now_s()):
-            self._adapter.clear()
+        try:
+            if self._state.should_clear(self._now_s()):
+                self._adapter.clear()
+                self._state.mark_cleared()
+            else:
+                self._adapter.pump()
+        except Exception as exc:  # une panne X/cv2 en cours d'affichage ne doit pas crasher le node
+            self.get_logger().error(f"tick affichage a échoué : {exc}")
             self._state.mark_cleared()
-        else:
-            self._adapter.pump()
 
 
 def main(args=None):

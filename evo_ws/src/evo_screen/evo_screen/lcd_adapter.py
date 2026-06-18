@@ -25,7 +25,7 @@ class HdmiCvAdapter:
     def show(self, image: Image.Image) -> None:
         cv2 = self._cv2
         if not self._open:
-            cv2.namedWindow(self._window_name, cv2.WND_PROP_FULLSCREEN)
+            cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
             cv2.setWindowProperty(self._window_name, cv2.WND_PROP_FULLSCREEN,
                                   cv2.WINDOW_FULLSCREEN)
             self._open = True
