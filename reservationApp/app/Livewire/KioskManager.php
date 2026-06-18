@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Models\Reservation;
 use Livewire\Component;
 
 class KioskManager extends Component
@@ -48,7 +49,35 @@ class KioskManager extends Component
             return;
         }
 
-        $this->reservation = json_decode($payload, true) ?? [];
+        $reservationData = json_decode($payload, true) ?? [];
+        $uuid = $reservationData['uuid'] ?? null;
+
+        $reservation = $uuid ? Reservation::where('uuid', $uuid)->first() : null;
+
+        if (!$reservation) {
+            $this->resultStatus = 'error';
+            $this->goToStep('result');
+            return;
+        }
+
+        if ($reservation->status === 'validated') {
+            $this->resultStatus = 'error';
+            $this->goToStep('result');
+            return;
+        }
+
+        if ($reservation->status === 'cancelled' || $reservation->status === 'expired') {
+            $this->resultStatus = 'error';
+            $this->goToStep('result');
+            return;
+        }
+
+        $reservation->update([
+            'status' => 'validated',
+            'validated_at' => now(),
+        ]);
+
+        $this->reservation = $reservationData;
         $this->resultStatus = 'success';
         $this->goToStep('result');
     }

@@ -23,6 +23,7 @@ class ReservationConfirmed extends Mailable
         public Reservation $reservation,
     ) {
         $payload = json_encode([
+            'uuid' => $reservation->uuid,
             'name' => $reservation->customer_name,
             'email' => $reservation->customer_email,
             'date' => $reservation->bookingSession->date->format('Y/m/d'),
