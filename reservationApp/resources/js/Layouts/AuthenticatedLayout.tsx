@@ -73,6 +73,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                         >
                                             {t('Users')}
                                         </NavLink>
+                                        <NavLink
+                                            href={route('admin.sessions.index')}
+                                            active={route().current('admin.sessions.*')}
+                                        >
+                                            {t('Sessions')}
+                                        </NavLink>
                                     </>
                                 )}
                             </div>
