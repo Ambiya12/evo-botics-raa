@@ -13,6 +13,8 @@ reservationApp/bridge/
 evo_ws/build/
 evo_ws/install/
 evo_ws/log/
+__pycache__/
+*.pyc
 
 # Scripts robot : config locale et état (IP DHCP, conteneur, dernier profil)
 scripts/robot/config.local.sh

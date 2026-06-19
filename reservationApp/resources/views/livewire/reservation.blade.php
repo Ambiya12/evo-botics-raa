@@ -356,7 +356,25 @@
                     </h2>
                     <p class="mt-2 max-w-md text-center text-gray-600" x-text="resultMessage"></p>
 
-                    <button wire:click="resetForm"
+                    @if($roomFound && $reservedRoomName)
+                        <p class="mt-3 text-center text-lg font-semibold text-gray-800">
+                            {{ __('Room') }}: {{ $reservedRoomName }}
+                        </p>
+                    @endif
+
+                    @if($roomFound && $qrCodeDataUri)
+                        <div class="mt-8 rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm">
+                            <p class="mb-4 text-sm font-medium text-gray-500">
+                                {{ __('Show this QR code to the robot camera') }}
+                            </p>
+                            <img src="{{ $qrCodeDataUri }}" alt="Reservation QR Code" class="mx-auto size-64">
+                            <p class="mt-4 text-sm text-gray-400">
+                                {{ $confirmationEmailSent ? __('You can also find it in your confirmation email.') : __('Keep this page open if the email does not arrive.') }}
+                            </p>
+                        </div>
+                    @endif
+
+                    <button @click="resetForm()" wire:click="resetForm"
                             class="mt-8 rounded-md bg-blue-600 px-8 py-3 text-lg font-semibold text-white hover:bg-blue-700 transition">
                         {{ __('Make another reservation') }}
                     </button>
@@ -365,4 +383,3 @@
         </div>
     </main>
 </div>
-

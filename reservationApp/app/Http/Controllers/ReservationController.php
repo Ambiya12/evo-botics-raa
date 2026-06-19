@@ -4,18 +4,39 @@ namespace App\Http\Controllers;
 
 use App\Models\Reservation;
 use App\Models\ActivityLog;
+use App\Support\ReservationQrPayload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ReservationController extends Controller
 {
     public function validateQRCode(Request $request)
     {
         $request->validate([
-            'uuid' => 'required|uuid|exists:reservations,uuid',
+            'uuid' => 'nullable|uuid|exists:reservations,uuid',
+            'qr_payload' => 'nullable|string',
         ]);
 
-        $reservation = Reservation::where('uuid', $request->uuid)->first();
+        $uuid = $request->input('uuid');
+
+        if (!$uuid && $request->filled('qr_payload')) {
+            $decoded = json_decode($request->input('qr_payload'), true);
+            if (!is_array($decoded) || !ReservationQrPayload::verify($decoded)) {
+                throw ValidationException::withMessages([
+                    'qr_payload' => ['The QR payload signature is invalid.'],
+                ]);
+            }
+            $uuid = ReservationQrPayload::uuidFromQrPayload($request->input('qr_payload'));
+        }
+
+        if (!$uuid) {
+            throw ValidationException::withMessages([
+                'uuid' => ['A reservation UUID or signed QR payload is required.'],
+            ]);
+        }
+
+        $reservation = Reservation::with('bookingSession.room')->where('uuid', $uuid)->firstOrFail();
 
         if ($reservation->status !== 'pending') {
             ActivityLog::create([
@@ -32,7 +53,9 @@ class ReservationController extends Controller
 
             return response()->json([
                 'status' => 'error',
-                'message' => "Cette réservation ne peut pas être validée (Statut actuel : {$reservation->status})."
+                'message' => "Cette réservation ne peut pas être validée (Statut actuel : {$reservation->status}).",
+                'error_code' => 'already_used',
+                'data' => $this->reservationPayload($reservation),
             ], 422);
         }
 
@@ -43,20 +66,20 @@ class ReservationController extends Controller
 
         ActivityLog::create([
             'action' => 'reservation_validated',
-            'description' => "Réservation validée pour {$request->customer_name}",
+            'description' => "Réservation validée pour {$reservation->customer_name}",
             'loggable_id' => $reservation->id,
             'loggable_type' => Reservation::class,
             'payload' => [
                 'validated_at' => $reservation->validated_at,
                 'uuid' => $reservation->uuid,
-                'method' => "QR Scan"
+                'method' => $request->filled('qr_payload') ? 'Signed QR Scan' : 'QR Scan'
             ]
         ]);
 
         return response()->json([
             'status' => 'success',
             'message' => "La réservation a été validée avec succès.",
-            'data' => $reservation
+            'data' => $this->reservationPayload($reservation->fresh()->load('bookingSession.room')),
         ], 200);
     }
 
@@ -89,6 +112,20 @@ class ReservationController extends Controller
             return redirect()->back()->with(['message' => 'Réservation annulée avec succès.']);
         });
     }
-}
 
-?>
+    private function reservationPayload(Reservation $reservation): array
+    {
+        $session = $reservation->bookingSession;
+
+        return [
+            'uuid' => $reservation->uuid,
+            'customer_name' => $reservation->customer_name,
+            'customer_email' => $reservation->customer_email,
+            'status' => $reservation->status,
+            'room' => $session?->room?->name,
+            'date' => optional($session?->date)->format('Y-m-d'),
+            'start_at' => $session?->start_at,
+            'end_at' => $session?->end_at,
+        ];
+    }
+}

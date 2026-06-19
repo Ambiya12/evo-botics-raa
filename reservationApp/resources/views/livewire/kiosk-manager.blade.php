@@ -4,101 +4,122 @@
 </div>
 
 @if($step === 'welcome')
-	<div class="screen">
-		<div class="flex items-center justify-center min-h-screen bg-white overflow-hidden relative">
-			<div class="absolute w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-pulse"></div>
+    <div class="screen">
+        <div class="flex min-h-screen items-center justify-center overflow-hidden bg-white px-6 font-robot">
+            <div class="w-full max-w-5xl text-center">
+                <p class="text-5xl font-bold text-gray-900 md:text-8xl">
+                    {{ __('Welcome to') }}
+                </p>
 
-			<div class="text-center z-10 font-robot"
-			     x-data="{ visible: false }"
-			     x-init="setTimeout(() => visible = true, 100)">
+                <h1 class="mt-4 text-5xl font-bold text-gray-900 md:text-7xl">
+                    EVO<span class="text-blue-500">BOTICS</span>
+                </h1>
 
-				<div x-show="visible"
-				     x-transition:enter="transition ease-out duration-1000"
-				     x-transition:enter-start="opacity-0 translate-y-10"
-				     x-transition:enter-end="opacity-100 translate-y-0">
-					<p class="-translate-y-20 text-black-400 font-bold text-8xl mt-20">
-						{{ __('Welcome to') }}
-					</p>
+                <p class="mt-8 text-3xl text-gray-500 md:text-5xl">
+                    {{ __('Show your reservation QR code') }}
+                </p>
 
-					<h1 class="-translate-y-10 text-6xl font-bold text-gray-900 tracking-tighter">
-						EVO<span class="text-blue-500">BOTICS</span>
-					</h1>
+                @if($scanMode === 'robot')
+                    <div class="mx-auto mt-12 flex h-64 w-64 items-center justify-center rounded-full border-8 border-dashed border-blue-300 bg-blue-50">
+                        <div class="h-28 w-28 animate-pulse rounded-full bg-blue-500"></div>
+                    </div>
 
-					<p class="text-gray-400 text-2xl">
-						{{ __('Please show me your reservation QR code to me to get started!') }}
-					</p>
-					
-					<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-8 mx-auto 
-					animate-bounce text-gray-400 mt-2">
-						<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 5.25 7.5 7.5 7.5-7.5m-15 6 7.5 7.5 7.5-7.5" />
-					</svg>
+                    <p class="mt-8 text-2xl font-semibold text-blue-600">
+                        {{ $robotStatusMessage ?: __('Waiting for the robot camera...') }}
+                    </p>
+                    <p class="mt-3 text-xl text-gray-400">
+                        {{ __('Keep the QR code steady in front of me.') }}
+                    </p>
+                @else
+                    <div class="mt-10 flex items-center justify-center">
+                        <div id="qr-reader" class="h-64 w-64 overflow-hidden rounded-xl border-4 border-dashed border-gray-400 -scale-x-100 [&_video]:h-full [&_video]:w-full [&_video]:object-cover"></div>
+                    </div>
+                    <p class="mt-6 text-xl text-gray-400">
+                        {{ __('Browser camera fallback mode') }}
+                    </p>
+                @endif
+            </div>
+        </div>
+    </div>
 
-					<div class="flex items-center justify-center">
-						<div id="qr-reader" class="w-64 h-64 rounded-xl overflow-hidden border-4 border-dashed border-gray-400 -scale-x-100 [&_video]:w-full [&_video]:h-full [&_video]:object-cover"></div>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
-	
 @elseif($step === 'validating')
-
-	<div class="flex flex-col items-center justify-center min-h-screen bg-white overflow-hidden font-robot screen">
-		<svg class="size-20 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-		</svg>
-		<p class="text-gray-500 text-5xl mt-2">{{ __('Validation in progress...') }}</p>
-		<p class="text-gray-500 text-5xl mt-2">{{ __('Please wait...') }}</p>
-	</div>
+    <div class="screen flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-6 text-center font-robot">
+        <svg class="size-24 animate-spin text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <p class="mt-8 text-4xl font-semibold text-gray-700 md:text-6xl">
+            {{ __('QR detected') }}
+        </p>
+        <p class="mt-4 text-3xl text-gray-500 md:text-5xl">
+            {{ $robotStatusMessage ?: __('Validating your reservation...') }}
+        </p>
+    </div>
 
 @elseif($step === 'result')
-	<div class="flex flex-col items-center justify-center min-h-screen {{ $resultStatus === 'success' ? 'bg-green-50' : 'bg-red-50' }} font-robot screen">
-		@if($resultStatus === 'success')
-			<svg class="size-20 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-			</svg>
-			<h1 class="mt-4 text-8xl font-bold text-green-700">{{ __('Success') }}</h1>
-			<p class="mt-2 text-green-600 text-4xl">{{ __('Your reservation has been successfully validated!') }}</p>
-			@if(!empty($reservation))
-				<p class="mt-2 text-green-500 text-2xl">{{ $reservation['name'] }} • {{ $reservation['date'] }} • {{ $reservation['startTime'] }} — {{ $reservation['endTime'] }}</p>
-			@endif
-		@else
-			<svg class="size-20 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-			</svg>
-			<h1 class="mt-4 text-8xl font-bold text-red-700">{{ __('Error') }}</h1>
-			<p class="mt-2 text-red-600 text-5xl">{{ __('Your QR code is invalid or expired.') }}</p>
-			<p class="mt-2 text-red-600 text-5xl">{{ __('Please verify with my colleagues!') }}</p>
-		@endif
-	</div>
+    <div class="screen flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 text-center font-robot {{ $resultStatus === 'success' ? 'bg-green-50' : 'bg-red-50' }}">
+        @if($resultStatus === 'success')
+            <svg class="size-24 text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h1 class="mt-6 text-6xl font-bold text-green-700 md:text-8xl">{{ __('Success') }}</h1>
+            <p class="mt-4 text-3xl text-green-600 md:text-5xl">{{ __('Your reservation has been validated.') }}</p>
+
+            @if(!empty($reservation))
+                <div class="mt-8 space-y-2 text-2xl text-green-700 md:text-4xl">
+                    @if(!empty($reservation['name']))
+                        <p>{{ $reservation['name'] }}</p>
+                    @endif
+                    @if(!empty($reservation['room']))
+                        <p>{{ $reservation['room'] }}</p>
+                    @endif
+                    @if(!empty($reservation['date']) || !empty($reservation['startTime']) || !empty($reservation['endTime']))
+                        <p>{{ $reservation['date'] }} {{ $reservation['startTime'] }} - {{ $reservation['endTime'] }}</p>
+                    @endif
+                </div>
+            @endif
+        @else
+            <svg class="size-24 text-red-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+            </svg>
+            <h1 class="mt-6 text-6xl font-bold text-red-700 md:text-8xl">{{ __('Error') }}</h1>
+            <p class="mt-4 text-3xl text-red-600 md:text-5xl">
+                {{ $robotStatusMessage ?: __('Your QR code is invalid or expired.') }}
+            </p>
+            <p class="mt-4 text-2xl text-red-500 md:text-4xl">{{ __('Please verify with my colleagues.') }}</p>
+        @endif
+    </div>
 
 @elseif($step === 'guide')
-	<div class="screen">
-		<div class="flex flex-col items-center justify-center min-h-screen bg-white overflow-hidden font-robot">
-			<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-20 text-blue-500 animate-bounce">
-				<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 18.75 7.5-7.5 7.5 7.5" />
-				<path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 7.5-7.5 7.5 7.5" />
-			</svg>
-			<span class="text-8xl text-blue-500">{{ __('Please follow me!') }}</span>
-			<span class="text-5xl flex items-center">
-			    {{ __('I will drive you to your room') }}
-			    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-12 ml-2">
-			        <path stroke-linecap="round" stroke-linejoin="round" d="M15.182 15.182a4.5 4.5 0 0 1-6.364 0M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75Zm-.375 0h.008v.015h-.008V9.75Z" />
-			    </svg>
-			</span>
-		</div>
-	</div>
+    <div class="screen">
+        <div class="flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-6 text-center font-robot">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-24 animate-bounce text-blue-500">
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 18.75 7.5-7.5 7.5 7.5" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 7.5-7.5 7.5 7.5" />
+            </svg>
+            <span class="mt-8 text-6xl text-blue-500 md:text-8xl">{{ __('Please follow me!') }}</span>
+            <span class="mt-6 text-3xl text-gray-700 md:text-5xl">
+                {{ __('I will drive you to your room') }}
+            </span>
+        </div>
+    </div>
 @endif
 </div>
 
 @script
     <script>
         let scannerInstance = null;
+        let robotQrSocket = null;
+        let robotQrReconnectTimer = null;
+        let robotQrStatusQueue = Promise.resolve();
+
+        const kioskScanMode = @js($scanMode);
+        const robotRosbridgeUrl = @js($robotRosbridgeUrl);
+        const robotQrTopic = '/reception/qr/status';
 
         async function startScanner() {
             const el = document.getElementById('qr-reader');
-            if (!el) return;
+            if (!el || kioskScanMode !== 'browser') return;
 
             if (scannerInstance) {
                 try { await scannerInstance.stop(); } catch (e) {}
@@ -129,18 +150,92 @@
             }
         }
 
+        function connectRobotQrStatus() {
+            if (kioskScanMode !== 'robot' || !robotRosbridgeUrl || robotQrSocket) return;
+
+            robotQrSocket = new WebSocket(robotRosbridgeUrl);
+
+            robotQrSocket.onopen = () => {
+                robotQrSocket.send(JSON.stringify({
+                    op: 'subscribe',
+                    id: 'kiosk:reception_qr_status',
+                    topic: robotQrTopic,
+                    type: 'std_msgs/msg/String'
+                }));
+            };
+
+            robotQrSocket.onmessage = (event) => {
+                try {
+                    const envelope = JSON.parse(event.data);
+                    const rawStatus = envelope?.msg?.data;
+                    if (envelope.op !== 'publish' || envelope.topic !== robotQrTopic || !rawStatus) return;
+                    const status = JSON.parse(rawStatus);
+
+                    robotQrStatusQueue = robotQrStatusQueue
+                        .catch(() => {})
+                        .then(() => $wire.applyRobotQrStatus(status))
+                        .catch((err) => {
+                            console.error('Robot QR status update error:', err);
+                        });
+                } catch (err) {
+                    console.error('Robot QR status parse error:', err);
+                }
+            };
+
+            robotQrSocket.onclose = () => {
+                robotQrSocket = null;
+                if (kioskScanMode === 'robot') {
+                    robotQrReconnectTimer = setTimeout(connectRobotQrStatus, 3000);
+                }
+            };
+
+            robotQrSocket.onerror = () => {
+                try { robotQrSocket.close(); } catch (e) {}
+            };
+        }
+
+        function stopRobotQrStatus() {
+            if (robotQrReconnectTimer) {
+                clearTimeout(robotQrReconnectTimer);
+                robotQrReconnectTimer = null;
+            }
+
+            if (robotQrSocket) {
+                try {
+                    robotQrSocket.send(JSON.stringify({
+                        op: 'unsubscribe',
+                        id: 'kiosk:reception_qr_status',
+                        topic: robotQrTopic
+                    }));
+                    robotQrSocket.close();
+                } catch (e) {}
+                robotQrSocket = null;
+            }
+        }
+
+        function syncKioskScanMode() {
+            if (kioskScanMode === 'browser' && $wire.step === 'welcome') {
+                stopRobotQrStatus();
+                setTimeout(startScanner, 300);
+                return;
+            }
+
+            stopScanner();
+            if (kioskScanMode === 'robot') {
+                connectRobotQrStatus();
+            }
+        }
+
         Livewire.on('start-timer', (event) => {
+            const payload = Array.isArray(event) ? event[0] : event;
             setTimeout(() => {
-                $wire.goToStep(event.nextStep);
-            }, event.delay);
+                Promise.resolve($wire.goToStep(payload.nextStep)).finally(() => {
+                    setTimeout(syncKioskScanMode, 300);
+                });
+            }, payload.delay);
         });
 
-        document.addEventListener('livewire:navigated', () => {
-            if ($wire.step === 'welcome') {
-                setTimeout(startScanner, 300);
-            } else {
-                stopScanner();
-            }
-        });
+        document.addEventListener('livewire:navigated', syncKioskScanMode);
+        syncKioskScanMode();
     </script>
 @endscript

@@ -37,6 +37,10 @@ RobotLayout (persistant)
 - `Components/Robot/RobotContext.tsx` — `RobotProvider` + `useRobotContext()`.
 - `hooks/useRosBridge.ts` — WebSocket rosbridge (contrat `RosApi` dans `Components/Robot/types.ts`).
 
+The map marker must use `/amcl_pose` for map-frame position. `/odom` is a different
+coordinate frame and is used only for linear/angular speed; mixing its X/Y into the map
+pose makes the marker snap back after setting `/initialpose`.
+
 Panneaux de présentation/commande réutilisés sans changement de props : `RobotHealthCards`,
 `CameraPanel`, `MapCanvas` (clic optionnel via `onGoal?`), `ManualControls`, `RobotActionsPanel`,
 `ArmControlPanel`, `ArmStateView`, `WaypointList`, `EmergencyStopButton`, `ConnectionStatus`,

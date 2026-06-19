@@ -101,6 +101,9 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
 
             <div className="mt-4 grid gap-3">
                 <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="mb-3 text-xs text-gray-500">
+                        Enter the robot&apos;s real position in map coordinates. The marker updates from AMCL, not raw odometry.
+                    </p>
                     <div className="grid grid-cols-3 gap-2">
                         <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500">
                             X

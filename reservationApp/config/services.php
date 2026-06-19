@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'robot' => [
+        'rosbridge_url' => env('ROBOT_ROSBRIDGE_URL', 'ws://10.10.220.251:9090'),
+    ],
+
 ];
