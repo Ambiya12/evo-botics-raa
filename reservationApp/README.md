@@ -101,35 +101,3 @@ php artisan tinker
 
 ⚠️ Ce chemin **n'est pas tracé** dans `activity_logs` et contourne les garde-fous : à n'utiliser
 qu'en cas d'urgence. Privilégier toujours `app:make-admin`.
-
----
-
-## 🤖 Affichage du kiosk sur l'écran du robot
-
-L'écran HDMI du robot affiche directement la page web **`/kiosk`** en plein écran, via un
-navigateur kiosk (chromium) lancé **sur l'hôte Jetson, hors Docker**. Le paquet ROS `evo_screen`
-ne fait plus que démarrer ce navigateur.
-
-**Prérequis côté laptop** (machine qui sert l'app) :
-- Sail démarré (`./vendor/bin/sail up -d`) — l'app est servie sur le **port 80**.
-- Pas de serveur Vite en cours : supprimer `public/hot` s'il existe, sinon les assets pointent
-  vers `localhost:5173`, injoignable depuis le robot.
-- Laptop et Jetson sur le **même réseau**, pare-feu ouvert sur le port 80.
-
-**Lancer le kiosk** (sur l'hôte Jetson) :
-```bash
-ssh jetson@<ip-jetson>
-~/scripts/robot/kiosk.sh                 # lit l'IP du laptop dans ~/scripts/robot/config.local.sh
-# ou en passant l'IP du laptop directement :
-~/scripts/robot/kiosk.sh 10.10.221.104
-```
-
-**Arrêter le kiosk** :
-```bash
-pkill -f chromium
-```
-
-> Si l'IP du laptop change (DHCP), mettre à jour `LAPTOP_IP` dans `~/scripts/robot/config.local.sh`.
-> ⚠️ Le scan QR par la caméra du robot ne fonctionne **pas** via le navigateur (la caméra Orbbec
-> est exposée comme flux ROS, pas comme webcam V4L2) : la page s'affiche, mais le scanner reste
-> inactif sur le robot.
