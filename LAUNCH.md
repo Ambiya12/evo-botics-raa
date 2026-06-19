@@ -196,7 +196,7 @@ ipconfig getifaddr en0
 2. Open the kiosk fullscreen on the robot screen over SSH:
 
 ```bash
-ssh jetson@IP_ROBOT "DISPLAY=:0 chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-gpu --use-gl=swiftshader http://LAPTOP_IP/kiosk"
+ssh jetson@10.10.221.138 "DISPLAY=:0 chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-gpu --use-gl=swiftshader http://10.10.220.25/kiosk"
 ```
 
 Stop the kiosk:
