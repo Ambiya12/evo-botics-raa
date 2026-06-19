@@ -111,6 +111,7 @@
         let scannerInstance = null;
         let robotQrSocket = null;
         let robotQrReconnectTimer = null;
+        let robotQrStatusQueue = Promise.resolve();
 
         const kioskScanMode = @js($scanMode);
         const robotRosbridgeUrl = @js($robotRosbridgeUrl);
@@ -159,8 +160,7 @@
                     op: 'subscribe',
                     id: 'kiosk:reception_qr_status',
                     topic: robotQrTopic,
-                    type: 'std_msgs/msg/String',
-                    throttle_rate: 100
+                    type: 'std_msgs/msg/String'
                 }));
             };
 
@@ -169,7 +169,14 @@
                     const envelope = JSON.parse(event.data);
                     const rawStatus = envelope?.msg?.data;
                     if (envelope.op !== 'publish' || envelope.topic !== robotQrTopic || !rawStatus) return;
-                    $wire.applyRobotQrStatus(JSON.parse(rawStatus));
+                    const status = JSON.parse(rawStatus);
+
+                    robotQrStatusQueue = robotQrStatusQueue
+                        .catch(() => {})
+                        .then(() => $wire.applyRobotQrStatus(status))
+                        .catch((err) => {
+                            console.error('Robot QR status update error:', err);
+                        });
                 } catch (err) {
                     console.error('Robot QR status parse error:', err);
                 }
