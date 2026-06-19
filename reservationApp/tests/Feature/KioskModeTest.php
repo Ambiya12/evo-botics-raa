@@ -10,9 +10,16 @@ class KioskModeTest extends TestCase
 {
     public function test_kiosk_defaults_to_robot_camera_mode(): void
     {
+        config()->set('services.robot.rosbridge_url', 'ws://127.0.0.1:9090');
+
+        Livewire::test(KioskManager::class)
+            ->assertSet('scanMode', 'robot')
+            ->assertSet('robotRosbridgeUrl', 'ws://127.0.0.1:9090');
+
         $this->get('/kiosk')
             ->assertOk()
             ->assertSee('Waiting for the robot camera', false)
+            ->assertSee('Connecting to the robot', false)
             ->assertDontSee('throttle_rate', false);
     }
 

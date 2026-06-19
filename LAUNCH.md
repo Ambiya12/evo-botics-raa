@@ -172,3 +172,44 @@ Likely future: `evo_interfaces`, `evo_reception`, `evo_voice`, `evo_bringup`,
 `evo_description`.
 
 Reference only: `docs/m3pro_teacher_ws` (teacher workspace) — do not launch its packages.
+
+## Display The Kiosk Screen On The Robot
+
+Show the Laravel `/kiosk` page fullscreen on the robot's HDMI screen. No ROS, no Docker:
+Chromium runs directly on the Jetson host and loads the page from the laptop serving the app.
+
+Prerequisites on the laptop:
+
+- Sail is up (`./vendor/bin/sail up -d`) — the app is served on **port 80**.
+- Assets are reachable from the robot: either `npm run build`, or set `VITE_HMR_HOST` to the
+  laptop IP in `reservationApp/.env` and run `sail npm run dev`.
+- Laptop and robot on the **same network**.
+
+`IP_ROBOT` is the Jetson IP (it can change — never hardcode it). `LAPTOP_IP` is the laptop IP.
+
+1. Get the laptop IP on the LAN (this is `LAPTOP_IP`; try `en1` if `en0` is empty):
+
+```bash
+ipconfig getifaddr en0
+```
+
+2. Open the kiosk fullscreen on the robot screen over SSH:
+
+```bash
+ssh jetson@10.10.221.138 "DISPLAY=:0 chromium-browser --kiosk --noerrdialogs --disable-infobars --incognito --disable-gpu --use-gl=swiftshader http://10.10.220.25/kiosk"
+```
+
+Stop the kiosk:
+
+```bash
+ssh jetson@IP_ROBOT 'pkill -f chromium'
+```
+
+## Important Notes
+
+- Keep each ROS launch running in its own terminal.
+- Treat `docs/m3pro_teacher_ws ` as reference material only. Do not launch `m3pro_teacher_*` packages for the Evo-Botics workflow.
+- If you stop the camera launch, `/camera/color/image_raw` disappears and `/camera/stream` has no frames.
+- If the Jetson host sees `/dev/video*` but Docker does not, the container was started without access to the camera device. Restart the robot Docker stack with USB/video device access, then launch the camera again.
+- If rosbridge is already running on `9090`, use `rosbridge:=false` for `web_dashboard.launch.py`.
+- The deploy script syncs `evo_ws/src` from this repository to the Jetson host workspace.

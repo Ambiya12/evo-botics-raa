@@ -36,7 +36,9 @@ return [
     ],
 
     'robot' => [
-        'rosbridge_url' => env('ROBOT_ROSBRIDGE_URL', 'ws://10.10.220.251:9090'),
+        // The production kiosk browser runs directly on the Jetson host. Using
+        // loopback keeps the connection stable when the robot's DHCP address changes.
+        'rosbridge_url' => env('ROBOT_ROSBRIDGE_URL', 'ws://127.0.0.1:9090'),
     ],
 
 ];

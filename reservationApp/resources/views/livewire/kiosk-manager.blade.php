@@ -27,6 +27,14 @@
                     <p class="mt-8 text-2xl font-semibold text-blue-600">
                         {{ $robotStatusMessage ?: __('Waiting for the robot camera...') }}
                     </p>
+                    <p
+                        id="robot-connection-status"
+                        class="mt-3 text-lg font-medium text-amber-600"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        {{ __('Connecting to the robot...') }}
+                    </p>
                     <p class="mt-3 text-xl text-gray-400">
                         {{ __('Keep the QR code steady in front of me.') }}
                     </p>
@@ -111,11 +119,45 @@
         let scannerInstance = null;
         let robotQrSocket = null;
         let robotQrReconnectTimer = null;
+        let robotQrConnectionTimer = null;
         let robotQrStatusQueue = Promise.resolve();
+        let robotQrReconnectAttempt = 0;
 
         const kioskScanMode = @js($scanMode);
         const robotRosbridgeUrl = @js($robotRosbridgeUrl);
         const robotQrTopic = '/reception/qr/status';
+        const robotConnectionMessages = {
+            connecting: @js(__('Connecting to the robot...')),
+            connected: @js(__('Robot connected. Waiting for a QR code...')),
+            disconnected: @js(__('Robot connection lost. Reconnecting...')),
+        };
+
+        function updateRobotConnectionStatus(state) {
+            const el = document.getElementById('robot-connection-status');
+            if (!el) return;
+
+            el.textContent = robotConnectionMessages[state] ?? robotConnectionMessages.connecting;
+            el.classList.toggle('text-green-600', state === 'connected');
+            el.classList.toggle('text-amber-600', state !== 'connected');
+        }
+
+        function clearRobotConnectionTimer() {
+            if (!robotQrConnectionTimer) return;
+
+            clearTimeout(robotQrConnectionTimer);
+            robotQrConnectionTimer = null;
+        }
+
+        function scheduleRobotQrReconnect() {
+            if (kioskScanMode !== 'robot' || robotQrReconnectTimer) return;
+
+            const delay = Math.min(1000 * (2 ** robotQrReconnectAttempt), 15000);
+            robotQrReconnectAttempt += 1;
+            robotQrReconnectTimer = setTimeout(() => {
+                robotQrReconnectTimer = null;
+                connectRobotQrStatus();
+            }, delay);
+        }
 
         async function startScanner() {
             const el = document.getElementById('qr-reader');
@@ -153,10 +195,30 @@
         function connectRobotQrStatus() {
             if (kioskScanMode !== 'robot' || !robotRosbridgeUrl || robotQrSocket) return;
 
-            robotQrSocket = new WebSocket(robotRosbridgeUrl);
+            updateRobotConnectionStatus('connecting');
 
-            robotQrSocket.onopen = () => {
-                robotQrSocket.send(JSON.stringify({
+            let socket;
+            try {
+                socket = new WebSocket(robotRosbridgeUrl);
+            } catch (err) {
+                console.error('Robot QR WebSocket setup error:', err);
+                updateRobotConnectionStatus('disconnected');
+                scheduleRobotQrReconnect();
+                return;
+            }
+
+            robotQrSocket = socket;
+            robotQrConnectionTimer = setTimeout(() => {
+                if (socket.readyState === WebSocket.CONNECTING) {
+                    socket.close();
+                }
+            }, 5000);
+
+            socket.onopen = () => {
+                clearRobotConnectionTimer();
+                robotQrReconnectAttempt = 0;
+                updateRobotConnectionStatus('connected');
+                socket.send(JSON.stringify({
                     op: 'subscribe',
                     id: 'kiosk:reception_qr_status',
                     topic: robotQrTopic,
@@ -164,7 +226,7 @@
                 }));
             };
 
-            robotQrSocket.onmessage = (event) => {
+            socket.onmessage = (event) => {
                 try {
                     const envelope = JSON.parse(event.data);
                     const rawStatus = envelope?.msg?.data;
@@ -182,34 +244,42 @@
                 }
             };
 
-            robotQrSocket.onclose = () => {
-                robotQrSocket = null;
-                if (kioskScanMode === 'robot') {
-                    robotQrReconnectTimer = setTimeout(connectRobotQrStatus, 3000);
+            socket.onclose = () => {
+                clearRobotConnectionTimer();
+                if (robotQrSocket === socket) {
+                    robotQrSocket = null;
+                    updateRobotConnectionStatus('disconnected');
+                    scheduleRobotQrReconnect();
                 }
             };
 
-            robotQrSocket.onerror = () => {
-                try { robotQrSocket.close(); } catch (e) {}
+            socket.onerror = (err) => {
+                console.error('Robot QR WebSocket error:', err);
+                try { socket.close(); } catch (e) {}
             };
         }
 
         function stopRobotQrStatus() {
+            clearRobotConnectionTimer();
+
             if (robotQrReconnectTimer) {
                 clearTimeout(robotQrReconnectTimer);
                 robotQrReconnectTimer = null;
             }
 
             if (robotQrSocket) {
-                try {
-                    robotQrSocket.send(JSON.stringify({
-                        op: 'unsubscribe',
-                        id: 'kiosk:reception_qr_status',
-                        topic: robotQrTopic
-                    }));
-                    robotQrSocket.close();
-                } catch (e) {}
+                const socket = robotQrSocket;
                 robotQrSocket = null;
+                try {
+                    if (socket.readyState === WebSocket.OPEN) {
+                        socket.send(JSON.stringify({
+                            op: 'unsubscribe',
+                            id: 'kiosk:reception_qr_status',
+                            topic: robotQrTopic
+                        }));
+                    }
+                    socket.close();
+                } catch (e) {}
             }
         }
 
