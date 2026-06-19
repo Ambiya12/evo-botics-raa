@@ -1,6 +1,7 @@
 import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { FormEvent, useState, useMemo } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface SessionRow {
     id: number;
@@ -24,7 +25,9 @@ interface SessionsPageProps {
 }
 
 export default function Index() {
+    const { t } = useTranslation();
     const { sessions, rooms, flash } = usePage<SessionsPageProps>().props;
+    const { locale } = usePage<{ locale: string }>().props;
 
     const [filterRoom, setFilterRoom] = useState<string>('all');
     const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -47,7 +50,7 @@ export default function Index() {
     };
 
     const handleDelete = (id: number) => {
-        if (confirm('Êtes-vous sûr de vouloir supprimer cette session ?')) {
+        if (confirm(t('Êtes-vous sûr de vouloir supprimer cette session ?'))) {
             router.delete(route('admin.sessions.destroy', id), {
                 preserveScroll: true,
             });
@@ -84,7 +87,7 @@ export default function Index() {
 
     return (
         <AuthenticatedLayout
-            header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Gestion des Sessions</h2>}>
+            header={<h2 className="text-xl font-semibold leading-tight text-gray-800">{t('Gestion des Sessions')}</h2>}>
             <Head title="Sessions de Réservation" />
 
             <div className="py-8">
@@ -97,14 +100,14 @@ export default function Index() {
                     )}
 
                     <div className="rounded-xl bg-white p-6 shadow-sm border border-gray-100">
-                        <h3 className="text-lg font-bold text-gray-900 mb-4">Créer un nouveau créneau de session</h3>
+                        <h3 className="text-lg font-bold text-gray-900 mb-4">{t('Créer un nouveau créneau de session')}</h3>
                         <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-4 items-end">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Salle</label>
                                 <select value={data.room_id} onChange={(e) => setData('room_id', e.target.value)}
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                     required>
-                                    <option value="">-- Choisir une salle --</option>
+                                    <option value="">-- {t('Choisir une salle')} --</option>
                                     {rooms.map((room) => (
                                         <option key={room.id} value={room.id}>{room.name}</option>
                                     ))}
@@ -113,7 +116,7 @@ export default function Index() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Date</label>
+                                <label className="block text-sm font-medium text-gray-700">{t('Date')}</label>
                                 <input type="date" value={data.date} onChange={(e) => setData('date', e.target.value)}
                                     className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
                                     required />
@@ -121,7 +124,7 @@ export default function Index() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Heure début / fin</label>
+                                <label className="block text-sm font-medium text-gray-700">{t('Heure début / fin')}</label>
                                 <div className="flex gap-2 items-center">
                                     <input type="time" value={data.start_at} onChange={(e) => setData('start_at', e.target.value)}
                                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
@@ -139,7 +142,7 @@ export default function Index() {
                             <div>
                                 <button type="submit" disabled={processing}
                                     className="w-full inline-flex justify-center rounded-md border border-transparent bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:bg-gray-400">
-                                    {processing ? 'Ajout...' : 'Ajouter le créneau'}
+                                    {processing ? 'Ajout...' : t('Ajouter le créneau')}
                                 </button>
                             </div>
                         </form>
@@ -148,10 +151,10 @@ export default function Index() {
                     <div className="flex flex-wrap items-center justify-between gap-4 bg-gray-50 p-4 rounded-xl border border-gray-200">
                         <div className="flex flex-wrap items-center gap-4">
                             <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Filtrer par Salle</label>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('Filtrer par salle')}</label>
                                 <select value={filterRoom} onChange={(e) => setFilterRoom(e.target.value)}
                                     className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm">
-                                    <option value="all">Toutes les salles</option>
+                                    <option value="all">{t('Toutes les salles')}</option>
                                     {rooms.map((room) => (
                                         <option key={room.id} value={room.name}>{room.name}</option>
                                     ))}
@@ -159,11 +162,11 @@ export default function Index() {
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Filtrer par Statut</label>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('Filtrer par statut')}</label>
                                 <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
                                     className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm">
-                                    <option value="all">Tous les statuts</option>
-                                    <option value="available">Disponible</option>
+                                    <option value="all">{t('Tous les statuts')}</option>
+                                    <option value="available">{t('Disponible')}</option>
                                     <option value="occupied">Occupée</option>
                                 </select>
                             </div>
@@ -171,7 +174,7 @@ export default function Index() {
 
                         <div className="flex flex-wrap items-center gap-4">
                             <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Trier par Date</label>
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('Trier par date')}</label>
                                 <select
                                     value={sortBy === 'date' ? dateOrder : 'none'}
                                     onChange={(e) => {
@@ -182,16 +185,15 @@ export default function Index() {
                                     }}
                                     className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm font-medium"
                                 >
-                                    <option value="none" disabled={sortBy === 'date'}>-- Choisir l'ordre --</option>
-                                    <option value="asc">Du plus tôt au plus tard 📅</option>
-                                    <option value="desc">Du plus tard au plus tôt ➔</option>
+                                    <option value="none" disabled={sortBy === 'date'}>-- {t("Choisir l'ordre")} --</option>
+                                    <option value="asc">{t('Du plus tôt au plus tard')} 📅</option>
+                                    <option value="desc">{t('Du plus tard au plus tôt')} ➔</option>
                                 </select>
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Trier par Horaires</label>
-                                <select
-                                    value={sortBy === 'time' ? timeOrder : 'none'}
+                                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">{t('Trier par horaires')}</label>
+                                <select value={sortBy === 'time' ? timeOrder : 'none'}
                                     onChange={(e) => {
                                         if (e.target.value !== 'none') {
                                             setSortBy('time');
@@ -200,9 +202,9 @@ export default function Index() {
                                     }}
                                     className="block w-48 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm font-medium"
                                 >
-                                    <option value="none" disabled={sortBy === 'time'}>-- Choisir l'ordre --</option>
-                                    <option value="asc">Le matin d'abord ⏰</option>
-                                    <option value="desc">L'après-midi d'abord ➔</option>
+                                    <option value="none" disabled={sortBy === 'time'}>-- {t("Choisir l'ordre")} --</option>
+                                    <option value="asc">{t("Le matin d'abord")} ⏰</option>
+                                    <option value="desc">{t("L'après-midi d'abord")} ➔</option>
                                 </select>
                             </div>
                         </div>
@@ -212,18 +214,18 @@ export default function Index() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Salle</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Date</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Horaires</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Statut</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">Action</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{t('Salle')}</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{t('Date')}</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{t('Horaires')}</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">{t('Statut')}</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider text-gray-500">{t('Action')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 bg-white">
                                 {processedSessions.length === 0 ? (
                                     <tr>
                                         <td colSpan={6} className="px-6 py-10 text-center text-sm text-gray-500">
-                                            Aucune session ne correspond à vos filtres.
+                                            {t('Aucune session ne correspond à vos filtres')}.
                                         </td>
                                     </tr>
                                 ) : (
@@ -231,7 +233,7 @@ export default function Index() {
                                         <tr key={session.id}>
                                             <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-900">{session.room_name}</td>
                                             <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
-                                                {new Date(session.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                {new Date(session.date).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}
                                             </td>
                                             <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-600">
                                                 {session.start_at} — {session.end_at}
@@ -239,18 +241,18 @@ export default function Index() {
                                             <td className="whitespace-nowrap px-6 py-4 text-sm">
                                                 {session.is_available ? (
                                                     <span className="inline-flex rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-800">
-                                                        Disponible
+                                                        {t('Disponible')}
                                                     </span>
                                                 ) : (
                                                     <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
-                                                        Occupée
+                                                        {t('Occupée')}
                                                     </span>
                                                 )}
                                             </td>
                                             <td className="whitespace-nowrap px-6 py-4 text-right text-sm font-medium">
                                                 <button onClick={() => handleDelete(session.id)}
                                                     className="text-red-600 hover:text-red-900 transition">
-                                                    Supprimer
+                                                    {t('Supprimer')}
                                                 </button>
                                             </td>
                                         </tr>

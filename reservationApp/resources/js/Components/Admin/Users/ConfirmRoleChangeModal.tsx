@@ -2,6 +2,7 @@ import Modal from '@/Components/Modal';
 import PrimaryButton from '@/Components/PrimaryButton';
 import DangerButton from '@/Components/DangerButton';
 import SecondaryButton from '@/Components/SecondaryButton';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export interface PendingChange {
     userId: number;
@@ -23,6 +24,7 @@ export default function ConfirmRoleChangeModal({
     onCancel,
 }: ConfirmRoleChangeModalProps) {
     const promoting = pending?.nextRole === 'admin';
+    const { t } = useTranslation();
 
     return (
         <Modal show={pending !== null} onClose={onCancel} maxWidth="md">
@@ -37,15 +39,15 @@ export default function ConfirmRoleChangeModal({
                 </p>
                 <div className="mt-6 flex justify-end gap-3">
                     <SecondaryButton onClick={onCancel} disabled={processing}>
-                        Annuler
+                        {t('Annuler')}
                     </SecondaryButton>
                     {promoting ? (
                         <PrimaryButton onClick={onConfirm} disabled={processing}>
-                            Promouvoir
+                            {t('Promouvoir')}
                         </PrimaryButton>
                     ) : (
                         <DangerButton onClick={onConfirm} disabled={processing}>
-                            Rétrograder
+                            {t('Rétrograder')}
                         </DangerButton>
                     )}
                 </div>

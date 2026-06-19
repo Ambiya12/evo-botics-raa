@@ -4,6 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import UserTable from '@/Components/Admin/Users/UserTable';
 import ConfirmRoleChangeModal, { type PendingChange } from '@/Components/Admin/Users/ConfirmRoleChangeModal';
 import { type AdminUserRow } from '@/Components/Admin/Users/UserRow';
+import { useTranslation } from '@/hooks/useTranslation';
 
 interface UsersPageProps {
     users: AdminUserRow[];
@@ -12,6 +13,7 @@ interface UsersPageProps {
 }
 
 export default function Index() {
+    const { t } = useTranslation();
     const { users, flash } = usePage<UsersPageProps>().props;
     const [pending, setPending] = useState<PendingChange | null>(null);
     const [processing, setProcessing] = useState(false);
@@ -41,7 +43,7 @@ export default function Index() {
 
     return (
         <AuthenticatedLayout
-            header={<h2 className="text-xl font-semibold leading-tight text-gray-800">Utilisateurs</h2>}
+            header={<h2 className="text-xl font-semibold leading-tight text-gray-800">{t('Utilisateurs')}</h2>}
         >
             <Head title="Utilisateurs" />
 
