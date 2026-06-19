@@ -1,6 +1,7 @@
 import PrimaryButton from '@/Components/PrimaryButton';
 import DangerButton from '@/Components/DangerButton';
 import RoleBadge from './RoleBadge';
+import { useTranslation } from '@/hooks/useTranslation';
 
 export interface AdminUserRow {
     id: number;
@@ -19,11 +20,12 @@ interface UserRowProps {
 export default function UserRow({ user, onRequestChange }: UserRowProps) {
     const isAdmin = user.role === 'admin';
     const disabled = user.isSelf || user.isLastAdmin;
+    const { t } = useTranslation();
     const tooltip = user.isSelf
         ? 'Vous ne pouvez pas modifier votre propre rôle.'
         : user.isLastAdmin
-          ? 'Impossible de rétrograder le dernier administrateur.'
-          : undefined;
+            ? "You can't demote the last admin."
+            : undefined;
 
     return (
         <tr className="border-b border-gray-100">
@@ -36,11 +38,11 @@ export default function UserRow({ user, onRequestChange }: UserRowProps) {
                 <span title={tooltip}>
                     {isAdmin ? (
                         <DangerButton disabled={disabled} onClick={() => onRequestChange(user)}>
-                            Rétrograder
+                            {t('Rétrograder')}
                         </DangerButton>
                     ) : (
                         <PrimaryButton disabled={disabled} onClick={() => onRequestChange(user)}>
-                            Promouvoir
+                            {t('Promouvoir')}
                         </PrimaryButton>
                     )}
                 </span>

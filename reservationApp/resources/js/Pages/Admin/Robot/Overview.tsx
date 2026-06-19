@@ -6,8 +6,10 @@ import MapCanvas from '@/Components/Robot/MapCanvas';
 import RobotHealthCards from '@/Components/Robot/RobotHealthCards';
 import { useRobotContext } from '@/Components/Robot/RobotContext';
 import type { LayoutComponent } from '@/types/inertia';
+import { useTranslation } from '@/hooks/useTranslation';
 
 const Overview: LayoutComponent = () => {
+    const { t } = useTranslation();
     const { cameraUrl, ros, telemetry } = useRobotContext();
     const rgb = telemetry.heartbeats.find((topic) => topic.key === 'rgb');
     const cameraOnline = rgb?.lastSeenAt != null && Date.now() - rgb.lastSeenAt < 5000;
@@ -28,7 +30,7 @@ const Overview: LayoutComponent = () => {
                 <div className="space-y-6">
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">Camera</span>
+                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('Camera')}</span>
                             <span className={`rounded-full px-2 py-1 text-xs font-semibold ring-1 ${cameraOnline ? 'bg-emerald-100 text-emerald-800 ring-emerald-200' : 'bg-gray-100 text-gray-700 ring-gray-200'}`}>
                                 {cameraOnline ? 'On' : 'Off'}
                             </span>
