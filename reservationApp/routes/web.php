@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\UserManagementController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReservationController;
 use App\Http\Controllers\BookingSessionController;
+use App\Http\Controllers\Admin\AdminSessionController;
 use App\Livewire\KioskManager;
 use App\Livewire\Reservation;
 use Illuminate\Foundation\Application;
@@ -59,6 +60,9 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
 
     Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
     Route::patch('users/{user}/role', [UserManagementController::class, 'updateRole'])->name('users.role.update');
+    Route::get('/sessions', [AdminSessionController::class, 'index'])->name('sessions.index');
+    Route::post('/sessions', [AdminSessionController::class, 'store'])->name('sessions.store');
+     Route::delete('/sessions/{bookingSession}', [AdminSessionController::class, 'destroy'])->name('sessions.destroy');
 });
 
 Route::middleware('auth')->group(function () {
