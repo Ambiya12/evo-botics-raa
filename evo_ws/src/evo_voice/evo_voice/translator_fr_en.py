@@ -1,22 +1,22 @@
 import os
 import sys
+import subprocess
 import speech_recognition as sr
 from faster_whisper import WhisperModel
-from deep_translator import GoogleTranslator
-from gtts import gTTS
-import subprocess
+import argostranslate.package
+import argostranslate.translate
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-CONFIG = {
-    "model_size": "base",
-    "device": "cpu",
-    "temp_audio": "/dev/shm/temp_capture.wav",
-    "speech_mp3": "/dev/shm/speech.mp3",
-}
+# CONFIGURATION
+MODEL_SIZE = "small"
+DEVICE = "cpu"
+TEMP_AUDIO = "/dev/shm/temp_capture.wav"
+SPEECH_WAV = "/dev/shm/voice.wav"
 
+# Couleurs terminal
 CYAN = "\033[96m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
@@ -25,97 +25,95 @@ BOLD = "\033[1m"
 RESET = "\033[0m"
 
 
-def log_system(msg):
-    print(f"{YELLOW}{BOLD}[SYSTÈME]{RESET} {msg}")
-
-
-def log_robot(lang, msg):
-    print(f"{CYAN}{BOLD}[ROBOT ({lang})]{RESET} {msg}")
-
-
-def log_user(lang, msg, prob):
-    print(f"{GREEN}{BOLD}[USER ({lang})]{RESET} {msg} ({prob:.1%})")
-
-
 class TranslatorNode(Node):
-    def __init__(self):
+    def __init__(self):ß
         super().__init__("translator_node")
 
-        self.declare_parameter("model_size", CONFIG["model_size"])
-        self.declare_parameter("device", CONFIG["device"])
-        self.declare_parameter("language", "fr")
-
-        model_size = self.get_parameter("model_size").value
-        device = self.get_parameter("device").value
-        self.target_lang = self.get_parameter("language").value
+        self.declare_parameter("model_size", MODEL_SIZE)
+        self.declare_parameter("device", DEVICE)
 
         self.publisher_ = self.create_publisher(String, "/voice/translation", 10)
 
-        log_system("Chargement du modèle Whisper...")
+        self.get_logger().info("Configuration du traducteur local...")
+        self._setup_translation()
+
+        self.get_logger().info("Chargement de Whisper...")
+        model_size = self.get_parameter("model_size").value
+        device = self.get_parameter("device").value
         self.model = WhisperModel(model_size, device=device, compute_type="int8")
+
         self.recognizer = sr.Recognizer()
         self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 0.8
+
+    def _setup_translation(self):
+        argostranslate.package.update_package_index()
+        available = argostranslate.package.get_available_packages()
+        for from_c, to_c in [("fr", "en"), ("en", "fr")]:
+            pkg = next(
+                filter(
+                    lambda x: x.from_code == from_c and x.to_code == to_c,
+                    available,
+                )
+            )
+            argostranslate.package.install_from_path(pkg.download())
+
+    def traduire(self, texte, source, cible):
+        return argostranslate.translate.translate(texte, source, cible)
 
     def parler(self, texte, langue):
-        try:
-            log_robot(langue, texte)
-            tts = gTTS(text=texte, lang=langue)
-            tts.save(CONFIG["speech_mp3"])
-            subprocess.run(["mpv", "--no-video", "--really-quiet", CONFIG["speech_mp3"]])
-        except Exception as e:
-            print(f"Erreur TTS : {e}")
-
-    def annoncer_demarrage(self):
-        log_system("Démarrage...")
-        self.parler("Système de traduction activé.", "fr")
-        self.parler("Translation system activated.", "en")
+        self.get_logger().info(f"[ROBOT ({langue})] {texte}")
+        cmd = f"echo '{texte}' | piper --model fr_FR-siwis-low --output_file {SPEECH_WAV}"
+        if langue == "en":
+            cmd = f"echo '{texte}' | piper --model en_GB-vctk-medium --output_file {SPEECH_WAV}"
+        os.system(cmd)
+        subprocess.run(["mpv", "--no-video", "--really-quiet", SPEECH_WAV])
 
     def nettoyer(self):
-        for path in [CONFIG["temp_audio"], CONFIG["speech_mp3"]]:
+        for path in [TEMP_AUDIO, SPEECH_WAV]:
             if os.path.exists(path):
                 os.remove(path)
 
-    def boucle_traduction(self):
-        self.annoncer_demarrage()
+    def boucle_ecoute(self):
+        self.parler("Système de traduction activé.", "fr")
+        self.parler("Translation system activated.", "en")
 
         with sr.Microphone() as source:
-            log_system("Calibrage micro (silence)...")
-            self.recognizer.adjust_for_ambient_noise(source, duration=1.2)
-            print(f"{GREEN}=== ROBOT PRÊT À TRADUIRE ==={RESET}\n")
+            self.get_logger().info("Calibrage micro...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            print(f"{GREEN}=== PRÊT (OFFLINE) ==={RESET}")
 
             while rclpy.ok():
                 try:
-                    print(f"{YELLOW}À l'écoute...{RESET}", end="\r")
-                    audio = self.recognizer.listen(source, timeout=None, phrase_time_limit=10)
+                    print(f"{YELLOW}Écoute...{RESET}", end="\r")
+                    audio = self.recognizer.listen(
+                        source, timeout=None, phrase_time_limit=10
+                    )
 
-                    print(f"{CYAN}Analyse...      {RESET}", end="\r")
-                    with open(CONFIG["temp_audio"], "wb") as f:
+                    with open(TEMP_AUDIO, "wb") as f:
                         f.write(audio.get_wav_data())
 
                     segments, info = self.model.transcribe(
-                        CONFIG["temp_audio"],
-                        beam_size=5,
-                        vad_filter=True,
-                        initial_prompt="User speaks French or English."
+                        TEMP_AUDIO, beam_size=5
                     )
-
                     texte = "".join([s.text for s in segments]).strip()
 
                     if texte and info.language_probability > 0.4:
-                        log_user(info.language, texte, info.language_probability)
+                        print(
+                            f"{GREEN}[{info.language}]{RESET} {texte} "
+                            f"({info.language_probability:.1%})"
+                        )
 
                         if info.language == "fr":
-                            traduction = GoogleTranslator(source='fr', target='en').translate(texte)
-                            self.parler(traduction, "en")
+                            trad = self.traduire(texte, "fr", "en")
+                            self.parler(trad, "en")
                         elif info.language == "en":
-                            traduction = GoogleTranslator(source='en', target='fr').translate(texte)
-                            self.parler(traduction, "fr")
+                            trad = self.traduire(texte, "en", "fr")
+                            self.parler(trad, "fr")
                         else:
                             continue
 
                         msg = String()
-                        msg.data = traduction
+                        msg.data = trad
                         self.publisher_.publish(msg)
                     else:
                         print(".", end="", flush=True)
@@ -123,7 +121,7 @@ class TranslatorNode(Node):
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    log_system(f"Erreur : {e}")
+                    self.get_logger().error(f"Erreur : {e}")
                     continue
 
 
@@ -132,7 +130,7 @@ def main(args=None):
     node = TranslatorNode()
 
     try:
-        node.boucle_traduction()
+        node.boucle_ecoute()
     except KeyboardInterrupt:
         pass
     finally:

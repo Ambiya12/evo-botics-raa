@@ -10,6 +10,9 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>std_msgs</exec_depend>
+  <exec_depend>python3-speechrecognition</exec_depend>
+  <exec_depend>python3-argostranslate</exec_depend>
+  <exec_depend>piper-tts</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>
