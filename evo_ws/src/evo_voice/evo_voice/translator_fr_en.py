@@ -15,7 +15,7 @@ MODEL_SIZE = "small"
 DEVICE = "cpu"
 TEMP_AUDIO = "/dev/shm/temp_capture.wav"
 VOICE_FR = "~/piper_models/fr_FR-siwis-low.onnx"
-VOICE_EN = "~/piper_models/en_GB-vctk-medium.onnx"
+VOICE_EN = "~/piper_models/en_US-arctic-medium.onnx"
 
 # Couleurs terminal
 CYAN = "\033[96m"
