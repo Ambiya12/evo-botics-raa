@@ -10,11 +10,12 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-# CONFIGURATION
+# --- CONFIGURATION ---
 MODEL_SIZE = "small"
 DEVICE = "cpu"
 TEMP_AUDIO = "/dev/shm/temp_capture.wav"
-SPEECH_WAV = "/dev/shm/voice.wav"
+VOICE_FR = "~/piper_models/fr_FR-siwis-low.onnx"
+VOICE_EN = "~/piper_models/en_GB-vctk-medium.onnx"
 
 # Couleurs terminal
 CYAN = "\033[96m"
@@ -26,61 +27,64 @@ RESET = "\033[0m"
 
 
 class TranslatorNode(Node):
-    def __init__(self):ß
+    def __init__(self):
         super().__init__("translator_node")
-
-        self.declare_parameter("model_size", MODEL_SIZE)
-        self.declare_parameter("device", DEVICE)
 
         self.publisher_ = self.create_publisher(String, "/voice/translation", 10)
 
-        self.get_logger().info("Configuration du traducteur local...")
+        self.get_logger().info("Initialisation des dictionnaires locaux...")
         self._setup_translation()
 
-        self.get_logger().info("Chargement de Whisper...")
-        model_size = self.get_parameter("model_size").value
-        device = self.get_parameter("device").value
-        self.model = WhisperModel(model_size, device=device, compute_type="int8")
+        model_size = MODEL_SIZE
+        self.get_logger().info(f"Chargement de Whisper ({model_size})...")
+        self.model = WhisperModel(model_size, device=DEVICE, compute_type="int8")
 
         self.recognizer = sr.Recognizer()
         self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.pause_threshold = 0.8
 
     def _setup_translation(self):
         argostranslate.package.update_package_index()
         available = argostranslate.package.get_available_packages()
         for from_c, to_c in [("fr", "en"), ("en", "fr")]:
-            pkg = next(
-                filter(
-                    lambda x: x.from_code == from_c and x.to_code == to_c,
-                    available,
+            installed = argostranslate.package.get_installed_packages()
+            if not any(p.from_code == from_c and p.to_code == to_c for p in installed):
+                self.get_logger().info(f"Installation du pack {from_c} -> {to_c}...")
+                pkg = next(
+                    filter(
+                        lambda x: x.from_code == from_c and x.to_code == to_c,
+                        available,
+                    )
                 )
-            )
-            argostranslate.package.install_from_path(pkg.download())
+                argostranslate.package.install_from_path(pkg.download())
 
     def traduire(self, texte, source, cible):
         return argostranslate.translate.translate(texte, source, cible)
 
     def parler(self, texte, langue):
+        model_path = os.path.expanduser(VOICE_FR if langue == "fr" else VOICE_EN)
+        out_wav = "/dev/shm/voice.wav"
+
         self.get_logger().info(f"[ROBOT ({langue})] {texte}")
-        cmd = f"echo '{texte}' | piper --model fr_FR-siwis-low --output_file {SPEECH_WAV}"
-        if langue == "en":
-            cmd = f"echo '{texte}' | piper --model en_GB-vctk-medium --output_file {SPEECH_WAV}"
+        cmd = f"echo '{texte}' | piper --model {model_path} --output_file {out_wav}"
         os.system(cmd)
-        subprocess.run(["mpv", "--no-video", "--really-quiet", SPEECH_WAV])
+        subprocess.run(["mpv", "--no-video", "--really-quiet", out_wav])
 
-    def nettoyer(self):
-        for path in [TEMP_AUDIO, SPEECH_WAV]:
-            if os.path.exists(path):
-                os.remove(path)
-
-    def boucle_ecoute(self):
+    def annoncer_demarrage(self):
+        print(f"\n{GREEN}{BOLD}--- DÉMARRAGE DU ROBOT ---{RESET}")
         self.parler("Système de traduction activé.", "fr")
         self.parler("Translation system activated.", "en")
 
+    def nettoyer(self):
+        if os.path.exists(TEMP_AUDIO):
+            os.remove(TEMP_AUDIO)
+
+    def boucle_ecoute(self):
+        self.annoncer_demarrage()
+
         with sr.Microphone() as source:
-            self.get_logger().info("Calibrage micro...")
+            print(f"\n{GREEN}=== ROBOT PRÊT ==={RESET}")
             self.recognizer.adjust_for_ambient_noise(source, duration=1)
-            print(f"{GREEN}=== PRÊT (OFFLINE) ==={RESET}")
 
             while rclpy.ok():
                 try:
@@ -93,15 +97,12 @@ class TranslatorNode(Node):
                         f.write(audio.get_wav_data())
 
                     segments, info = self.model.transcribe(
-                        TEMP_AUDIO, beam_size=5
+                        TEMP_AUDIO, beam_size=5, vad_filter=True
                     )
                     texte = "".join([s.text for s in segments]).strip()
 
                     if texte and info.language_probability > 0.4:
-                        print(
-                            f"{GREEN}[{info.language}]{RESET} {texte} "
-                            f"({info.language_probability:.1%})"
-                        )
+                        print(f"{GREEN}{BOLD}[MOI ({info.language})]{RESET} {texte}")
 
                         if info.language == "fr":
                             trad = self.traduire(texte, "fr", "en")
@@ -121,8 +122,7 @@ class TranslatorNode(Node):
                 except KeyboardInterrupt:
                     raise
                 except Exception as e:
-                    self.get_logger().error(f"Erreur : {e}")
-                    continue
+                    print(f"\n{RED}Erreur : {e}{RESET}")
 
 
 def main(args=None):
@@ -134,7 +134,7 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.parler("Désactivation. Au revoir.", "fr")
+        node.parler("Fermeture du traducteur. Au revoir.", "fr")
         node.parler("Shutting down. Goodbye.", "en")
         node.nettoyer()
         node.destroy_node()
