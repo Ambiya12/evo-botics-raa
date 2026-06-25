@@ -65,7 +65,7 @@
   "Sorry, no rooms are available for this time slot. Please try another time.": "Désolé, aucune salle n'est disponible pour ce créneau. Veuillez essayer un autre horaire.",
   "Password": "Mot de passe",
   "Remember me": "Se souvenir de moi",
-  "Forgot your password?": "Mot de passe oublié ?",
+  "Forgot your password ?": "Mot de passe oublié ?",
   "Confirm Password": "Confirmer le mot de passe",
   "Already registered?": "Déjà inscrit ?",
   "Profile": "Profil",
@@ -115,5 +115,6 @@
   "Rôle": "Rôle",
   "Annuler": "Annuler",
   "Promouvoir": "Promouvoir",
-  "Rétrograder": "Rétrograder"
+  "Rétrograder": "Rétrograder",
+  "Don't have an account ? Register": "Vous n'avez pas de compte ? Inscrivez-vous"
 }

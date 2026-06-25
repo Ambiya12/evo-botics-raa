@@ -83,14 +83,19 @@ export default function Login({ status, canResetPassword }) {
                 </div>
 
                 <div className="mt-4 flex items-center justify-end">
-                    {canResetPassword && (
-                        <Link
-                            href={route('password.request')}
-                            className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
-                        >
-                            {t('Forgot your password?')}
+                    <div className="flex flex-col gap-1">
+                        {canResetPassword && (
+                            <Link href={route('password.request')}
+                                className="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+                                {t('Forgot your password ?')}
+                            </Link>
+                        )}
+
+                        <Link href={route('register')}
+                            className="rounded-md text-sm text-blue-600 underline hover:text-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 font-medium">
+                            {t("Don't have an account ? Register")}
                         </Link>
-                    )}
+                    </div>
 
                     <PrimaryButton className="ms-4" disabled={processing}>
                         {t('Log in')}
