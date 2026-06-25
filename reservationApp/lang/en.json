@@ -64,7 +64,7 @@
   "Sorry, no rooms are available for this time slot. Please try another time.": "Sorry, no rooms are available for this time slot. Please try another time.",
   "Password": "Password",
   "Remember me": "Remember me",
-  "Forgot your password?": "Forgot your password?",
+  "Forgot your password ?": "Forgot your password ?",
   "Confirm Password": "Confirm Password",
   "Already registered?": "Already registered?",
   "Profile": "Profile",
@@ -114,5 +114,6 @@
   "Rôle": "Role",
   "Annuler": "Cancel",
   "Promouvoir": "Promote",
-  "Rétrograder": "Demote"
+  "Rétrograder": "Demote",
+  "Don't have an account ? Register": "Don't have an account? Register"
 }

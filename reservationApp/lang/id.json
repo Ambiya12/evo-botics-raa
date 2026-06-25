@@ -65,7 +65,7 @@
   "Sorry, no rooms are available for this time slot. Please try another time.": "Maaf, tidak ada ruangan yang tersedia untuk slot waktu ini. Silakan coba waktu lain.",
   "Password": "Kata Sandi",
   "Remember me": "Ingat saya",
-  "Forgot your password?": "Lupa kata sandi?",
+  "Forgot your password ?": "Lupa kata sandi?",
   "Confirm Password": "Konfirmasi Kata Sandi",
   "Already registered?": "Sudah terdaftar?",
   "Profile": "Profil",
@@ -115,5 +115,6 @@
   "Rôle": "Peran",
   "Annuler": "Batal",
   "Promouvoir": "Mempromosikan",
-  "Rétrograder": "Menurunkan pangkat"
+  "Rétrograder": "Menurunkan pangkat",
+  "Don't have an account ? Register": "Belum punya akun? Daftar"
 }

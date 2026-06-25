@@ -65,7 +65,7 @@
   "Sorry, no rooms are available for this time slot. Please try another time.": "抱歉，该时间段没有可用房间。请尝试其他时间。",
   "Password": "密码",
   "Remember me": "记住我",
-  "Forgot your password?": "忘记密码？",
+  "Forgot your password ?": "忘记密码？",
   "Confirm Password": "确认密码",
   "Already registered?": "已经注册？",
   "Profile": "个人资料",
@@ -115,5 +115,6 @@
   "Rôle": "角色",
   "Annuler": "取消",
   "Promouvoir": "推广",
-  "Rétrograder": "降级"
+  "Rétrograder": "降级",
+  "Don't have an account ? Register": "还没有账号？注册"
 }
