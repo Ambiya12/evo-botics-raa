@@ -13,6 +13,7 @@ setup(
         ("share/ament_index/resource_index/packages", [f"resource/{package_name}"]),
         (f"share/{package_name}", ["package.xml"]),
         (os.path.join("share", package_name, "launch"), glob("launch/*.launch.py")),
+        (os.path.join("share", package_name, "config"), glob("config/*.yaml")),
     ],
     install_requires=["setuptools"],
     zip_safe=True,
@@ -22,6 +23,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "tts_node = evo_voice.tts_node:main",
             "translator_node = evo_voice.translator_fr_en:main",
         ],
     },
