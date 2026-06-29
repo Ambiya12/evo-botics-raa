@@ -1,6 +1,7 @@
 phrases:
   greeting: "Hello, welcome. How can I help you?"
   clarify_intent: "Please tell me whether you have a reservation or need help."
+  clarification_failed: "I am sorry, I could not understand your request."
   request_qr: "Please show your reservation QR code to the camera."
   invalid_qr: "I could not validate that QR code. Please try again."
   expired_qr: "That reservation QR code has expired."
