@@ -1,0 +1,11 @@
+string request_id
+string destination_id
+---
+uint8 ARRIVED=0
+uint8 CANCELLED=1
+uint8 TIMEOUT=2
+uint8 FAILED=3
+uint8 outcome
+string message
+---
+string state

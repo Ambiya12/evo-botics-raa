@@ -26,6 +26,9 @@ def generate_launch_description():
             "qr_validation_service", default_value="/reception/qr/validate"
         ),
         DeclareLaunchArgument("duplicate_cooldown_sec", default_value="5.0"),
+        DeclareLaunchArgument(
+            "guide_action_name", default_value="/reception/guide_to_destination"
+        ),
 
         Node(
             package="evo_reception",
@@ -55,6 +58,7 @@ def generate_launch_description():
                 "duplicate_cooldown_sec": ParameterValue(
                     LaunchConfiguration("duplicate_cooldown_sec"), value_type=float
                 ),
+                "guide_action_name": LaunchConfiguration("guide_action_name"),
             }],
             output="screen",
         ),
