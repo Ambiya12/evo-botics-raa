@@ -3,7 +3,11 @@ from __future__ import annotations
 import time
 
 from evo_reception_interfaces.action import GuideToDestination
-from evo_reception_interfaces.msg import IntentResult, PersonApproach
+from evo_reception_interfaces.msg import (
+    IntentResult,
+    PersonApproach,
+    WorkflowStatus,
+)
 from evo_reception_interfaces.srv import ValidateQr
 import rclpy
 from rclpy.action import ActionClient
@@ -85,6 +89,11 @@ class DialogueManagerNode(Node):
                 "approach_topic", "/vision/people/approach"
             ).value
         )
+        workflow_status_topic = str(
+            self.declare_parameter(
+                "workflow_status_topic", "/reception/workflow/status"
+            ).value
+        )
 
         self.manager = DialogueManager(max_retries=max_retries)
         self.qr_scan_gate = QrScanGate(duplicate_cooldown_sec)
@@ -92,6 +101,9 @@ class DialogueManagerNode(Node):
         self.navigation_request_token = 0
         self.navigation_goal_handle = None
         self.navigation_send_future = None
+        self.navigation_is_returning = False
+        self.session_counter = 0
+        self.session_id = ""
         self.deadline: float | None = None
         self.tts_request_publisher = self.create_publisher(
             String, tts_request_topic, 10
@@ -102,6 +114,9 @@ class DialogueManagerNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.state_publisher = self.create_publisher(String, state_topic, state_qos)
+        self.workflow_status_publisher = self.create_publisher(
+            WorkflowStatus, workflow_status_topic, state_qos
+        )
         self.create_subscription(
             IntentResult, intent_topic, self.on_intent, 10
         )
@@ -123,6 +138,7 @@ class DialogueManagerNode(Node):
         )
         self.create_timer(timer_period_sec, self.on_timer)
         self.publish_state()
+        self.publish_workflow_status("idle", "Waiting for a visitor.")
         self.get_logger().info(
             f"Dialogue manager ready: intent={intent_topic} event={event_topic} "
             f"state={state_topic}"
@@ -151,6 +167,15 @@ class DialogueManagerNode(Node):
                 and self.manager.guidance_announcement_completed
             ):
                 self.request_navigation()
+            elif (
+                transition.accepted
+                and self.manager.state == DialogueState.ARRIVED
+                and self.manager.return_to_reception_ready
+            ):
+                self.request_navigation(
+                    destination_id="reception",
+                    returning=True,
+                )
         elif status == "failed":
             self.apply(self.manager.handle_event(DialogueEvent.TTS_FAILED))
 
@@ -258,16 +283,19 @@ class DialogueManagerNode(Node):
             )
         )
 
-    def request_navigation(self) -> None:
-        destination_id = self.manager.destination_id
+    def request_navigation(
+        self,
+        destination_id: str | None = None,
+        returning: bool = False,
+    ) -> None:
+        destination_id = destination_id or self.manager.destination_id
         if not destination_id or not self.navigation_client.server_is_ready():
-            self.apply(
-                self.manager.handle_event(DialogueEvent.NAVIGATION_FAILED)
-            )
+            self.apply_navigation_failure(returning)
             return
 
         self.navigation_request_token += 1
         request_token = self.navigation_request_token
+        self.navigation_is_returning = returning
         goal = GuideToDestination.Goal()
         goal.request_id = str(request_token)
         goal.destination_id = destination_id
@@ -280,6 +308,11 @@ class DialogueManagerNode(Node):
                 completed, request_token
             )
         )
+        self.publish_workflow_status(
+            "returning" if returning else "navigation_requested",
+            f"Requested navigation to '{destination_id}'.",
+            destination_id=destination_id,
+        )
 
     def on_navigation_goal_response(self, future, request_token: int) -> None:
         if request_token != self.navigation_request_token:
@@ -289,20 +322,17 @@ class DialogueManagerNode(Node):
             goal_handle = future.result()
         except Exception as exc:
             self.get_logger().error(f"Navigation goal request failed: {exc}")
-            self.apply(
-                self.manager.handle_event(DialogueEvent.NAVIGATION_FAILED)
-            )
+            self.apply_navigation_failure(self.navigation_is_returning)
             return
         if goal_handle is None or not goal_handle.accepted:
-            self.apply(
-                self.manager.handle_event(DialogueEvent.NAVIGATION_FAILED)
-            )
+            self.apply_navigation_failure(self.navigation_is_returning)
             return
 
         self.navigation_goal_handle = goal_handle
-        self.apply(
-            self.manager.handle_event(DialogueEvent.NAVIGATION_STARTED)
-        )
+        if not self.navigation_is_returning:
+            self.apply(
+                self.manager.handle_event(DialogueEvent.NAVIGATION_STARTED)
+            )
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
             lambda completed: self.on_navigation_result(
@@ -327,13 +357,27 @@ class DialogueManagerNode(Node):
             outcome = GuideToDestination.Result.FAILED
 
         if outcome == GuideToDestination.Result.ARRIVED:
-            transition = self.manager.handle_event(
-                DialogueEvent.NAVIGATION_ARRIVED
-            )
+            if self.navigation_is_returning:
+                transition = self.manager.handle_return_result(True)
+            else:
+                transition = self.manager.handle_event(
+                    DialogueEvent.NAVIGATION_ARRIVED
+                )
         else:
-            transition = self.manager.handle_event(
-                DialogueEvent.NAVIGATION_FAILED
-            )
+            if self.navigation_is_returning:
+                transition = self.manager.handle_return_result(False)
+            else:
+                transition = self.manager.handle_event(
+                    DialogueEvent.NAVIGATION_FAILED
+                )
+        self.apply(transition)
+
+    def apply_navigation_failure(self, returning: bool) -> None:
+        transition = (
+            self.manager.handle_return_result(False)
+            if returning
+            else self.manager.handle_event(DialogueEvent.NAVIGATION_FAILED)
+        )
         self.apply(transition)
 
     def cancel_navigation(self) -> None:
@@ -379,10 +423,28 @@ class DialogueManagerNode(Node):
             self.qr_request_token += 1
             self.qr_scan_gate.complete()
         if transition.changed:
+            if (
+                transition.previous == DialogueState.IDLE
+                and transition.current == DialogueState.GREETING
+            ):
+                self.session_counter += 1
+                self.session_id = f"session-{self.session_counter}"
             self.publish_state()
         for phrase in transition.speech:
             self.tts_request_publisher.publish(String(data=f"phrase:{phrase}"))
         self.refresh_deadline(transition)
+        outcome = transition.current.value.lower()
+        if transition.current == DialogueState.ERROR:
+            outcome = "failed"
+        elif (
+            transition.previous == DialogueState.ARRIVED
+            and transition.current == DialogueState.IDLE
+        ):
+            outcome = "completed"
+        self.publish_workflow_status(
+            outcome,
+            ",".join(transition.speech),
+        )
 
     def refresh_deadline(self, transition: Transition) -> None:
         if transition.speech:
@@ -397,6 +459,25 @@ class DialogueManagerNode(Node):
 
     def publish_state(self) -> None:
         self.state_publisher.publish(String(data=self.manager.state.value))
+
+    def publish_workflow_status(
+        self,
+        outcome: str,
+        detail: str,
+        destination_id: str | None = None,
+    ) -> None:
+        status = WorkflowStatus()
+        status.header.stamp = self.get_clock().now().to_msg()
+        status.session_id = self.session_id
+        status.state = self.manager.state.value
+        status.outcome = outcome
+        status.detail = detail
+        status.destination_id = (
+            destination_id
+            if destination_id is not None
+            else (self.manager.destination_id or "")
+        )
+        self.workflow_status_publisher.publish(status)
 
 
 def main(args=None) -> None:

@@ -63,6 +63,7 @@ class DialogueManager:
         self.retry_count = 0
         self.qr_prompt_completed = False
         self.guidance_announcement_completed = False
+        self.return_to_reception_ready = False
         self.destination_id: str | None = None
 
     def handle_intent(self, intent: str) -> Transition:
@@ -179,7 +180,7 @@ class DialogueManager:
 
         elif self.state == DialogueState.ARRIVED:
             if event == DialogueEvent.TTS_COMPLETED:
-                self._reset()
+                self.return_to_reception_ready = True
                 return Transition(previous, self.state, True)
 
         elif self.state == DialogueState.ERROR:
@@ -233,6 +234,22 @@ class DialogueManager:
             previous, self.state, True, ("validation_unavailable",)
         )
 
+    def handle_return_result(self, arrived: bool) -> Transition:
+        previous = self.state
+        if (
+            self.state != DialogueState.ARRIVED
+            or not self.return_to_reception_ready
+        ):
+            return self._invalid(previous)
+        if arrived:
+            self._reset()
+            return Transition(previous, self.state, True)
+        self.state = DialogueState.ERROR
+        self.return_to_reception_ready = False
+        return Transition(
+            previous, self.state, True, ("navigation_failed",)
+        )
+
     def _handle_rejected_qr(
         self,
         previous: DialogueState,
@@ -252,6 +269,7 @@ class DialogueManager:
         self.retry_count = 0
         self.qr_prompt_completed = False
         self.guidance_announcement_completed = False
+        self.return_to_reception_ready = False
         self.destination_id = None
 
     def _invalid(self, previous: DialogueState) -> Transition:

@@ -32,6 +32,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "approach_topic", default_value="/vision/people/approach"
         ),
+        DeclareLaunchArgument(
+            "workflow_status_topic", default_value="/reception/workflow/status"
+        ),
 
         Node(
             package="evo_reception",
@@ -63,6 +66,9 @@ def generate_launch_description():
                 ),
                 "guide_action_name": LaunchConfiguration("guide_action_name"),
                 "approach_topic": LaunchConfiguration("approach_topic"),
+                "workflow_status_topic": LaunchConfiguration(
+                    "workflow_status_topic"
+                ),
             }],
             output="screen",
         ),

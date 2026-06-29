@@ -50,6 +50,9 @@ def test_happy_path_reaches_arrival_and_resets() -> None:
     )
     assert manager.state == DialogueState.ARRIVED
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
+    assert manager.state == DialogueState.ARRIVED
+    assert manager.return_to_reception_ready
+    manager.handle_return_result(True)
     assert manager.state == DialogueState.IDLE
 
 
@@ -138,3 +141,14 @@ def test_unverified_qr_result_cannot_skip_to_ready() -> None:
     assert not transition.accepted
     assert manager.state == DialogueState.WAITING_FOR_QR
     assert manager.destination_id is None
+
+
+def test_return_to_reception_failure_enters_error() -> None:
+    manager = DialogueManager()
+    manager.state = DialogueState.ARRIVED
+    manager.handle_event(DialogueEvent.TTS_COMPLETED)
+
+    transition = manager.handle_return_result(False)
+
+    assert manager.state == DialogueState.ERROR
+    assert transition.speech == ("navigation_failed",)

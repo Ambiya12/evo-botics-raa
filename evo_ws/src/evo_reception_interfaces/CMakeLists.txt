@@ -12,6 +12,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/PersonApproach.msg"
   "msg/PersonDetection.msg"
   "msg/Transcript.msg"
+  "msg/WorkflowStatus.msg"
   "action/GuideToDestination.action"
   "srv/ValidateQr.srv"
   DEPENDENCIES action_msgs std_msgs

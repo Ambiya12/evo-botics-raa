@@ -9,9 +9,16 @@
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>ros2launch</exec_depend>
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>evo_reception_interfaces</exec_depend>
+  <exec_depend>evo_navigation</exec_depend>
+  <exec_depend>evo_vision</exec_depend>
+  <exec_depend>evo_voice</exec_depend>
 
+  <test_depend>evo_navigation</test_depend>
+  <test_depend>evo_vision</test_depend>
+  <test_depend>evo_voice</test_depend>
   <test_depend>python3-pytest</test_depend>
 
   <export>
