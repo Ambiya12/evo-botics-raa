@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 
 from evo_reception_interfaces.action import GuideToDestination
-from evo_reception_interfaces.msg import IntentResult
+from evo_reception_interfaces.msg import IntentResult, PersonApproach
 from evo_reception_interfaces.srv import ValidateQr
 import rclpy
 from rclpy.action import ActionClient
@@ -80,6 +80,11 @@ class DialogueManagerNode(Node):
                 "guide_action_name", "/reception/guide_to_destination"
             ).value
         )
+        approach_topic = str(
+            self.declare_parameter(
+                "approach_topic", "/vision/people/approach"
+            ).value
+        )
 
         self.manager = DialogueManager(max_retries=max_retries)
         self.qr_scan_gate = QrScanGate(duplicate_cooldown_sec)
@@ -105,6 +110,9 @@ class DialogueManagerNode(Node):
         )
         self.create_subscription(String, event_topic, self.on_external_event, 10)
         self.create_subscription(
+            PersonApproach, approach_topic, self.on_person_approach, 10
+        )
+        self.create_subscription(
             String, qr_detections_topic, self.on_qr_detection, 10
         )
         self.qr_validation_client = self.create_client(
@@ -124,6 +132,11 @@ class DialogueManagerNode(Node):
         if message.intent.strip().lower() == "cancel":
             self.cancel_navigation()
         self.apply(self.manager.handle_intent(message.intent))
+
+    def on_person_approach(self, message: PersonApproach) -> None:
+        self.apply(
+            self.manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+        )
 
     def on_tts_status(self, message: String) -> None:
         status = message.data.strip().lower()

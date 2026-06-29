@@ -22,6 +22,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "human_approach_node = evo_vision.human_approach_node:main",
             "qr_scanner_node = evo_vision.qr_scanner_node:main",
             "depth_obstacle_scan_node = evo_vision.depth_obstacle_scan_node:main",
             "object_detector_node = evo_vision.object_detector_node:main",

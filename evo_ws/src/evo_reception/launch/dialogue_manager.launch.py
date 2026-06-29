@@ -29,6 +29,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "guide_action_name", default_value="/reception/guide_to_destination"
         ),
+        DeclareLaunchArgument(
+            "approach_topic", default_value="/vision/people/approach"
+        ),
 
         Node(
             package="evo_reception",
@@ -59,6 +62,7 @@ def generate_launch_description():
                     LaunchConfiguration("duplicate_cooldown_sec"), value_type=float
                 ),
                 "guide_action_name": LaunchConfiguration("guide_action_name"),
+                "approach_topic": LaunchConfiguration("approach_topic"),
             }],
             output="screen",
         ),

@@ -9,6 +9,8 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/IntentResult.msg"
   "msg/NavigationStatus.msg"
+  "msg/PersonApproach.msg"
+  "msg/PersonDetection.msg"
   "msg/Transcript.msg"
   "action/GuideToDestination.action"
   "srv/ValidateQr.srv"
