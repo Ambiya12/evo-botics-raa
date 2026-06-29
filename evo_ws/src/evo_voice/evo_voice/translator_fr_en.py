@@ -1,144 +1,174 @@
+from __future__ import annotations
+
 import os
-import sys
 import subprocess
-import speech_recognition as sr
-from faster_whisper import WhisperModel
-import argostranslate.package
-import argostranslate.translate
+from typing import Any
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 
-# --- CONFIGURATION ---
-MODEL_SIZE = "small"
-DEVICE = "cpu"
-TEMP_AUDIO = "/dev/shm/temp_capture.wav"
-VOICE_FR = "~/piper_models/fr_FR-siwis-low.onnx"
-VOICE_EN = "~/piper_models/en_US-arctic-medium.onnx"
-
-# Couleurs terminal
-CYAN = "\033[96m"
-GREEN = "\033[92m"
-YELLOW = "\033[93m"
-RED = "\033[91m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
+from evo_voice.config import ConfigurationError, VoiceConfig
+from evo_voice.translation import OfflineTranslator, TranslationConfigurationError
 
 
 class TranslatorNode(Node):
-    def __init__(self):
+    """Legacy translation prototype, kept separate from the reception workflow."""
+
+    def __init__(self) -> None:
         super().__init__("translator_node")
-
+        self.config = VoiceConfig.from_node(self)
         self.publisher_ = self.create_publisher(String, "/voice/translation", 10)
+        self.model: Any = None
+        self.recognizer: Any = None
+        self.translator: OfflineTranslator | None = None
 
-        self.get_logger().info("Initialisation des dictionnaires locaux...")
-        self._setup_translation()
+        if self.config.mock_audio:
+            self.get_logger().warning(
+                "Mock audio mode is active; microphone capture, transcription, "
+                "translation, and playback are disabled."
+            )
+            return
 
-        model_size = MODEL_SIZE
-        self.get_logger().info(f"Chargement de Whisper ({model_size})...")
-        self.model = WhisperModel(model_size, device=DEVICE, compute_type="int8")
+        self._initialize_hardware_mode()
+
+    def _initialize_hardware_mode(self) -> None:
+        import speech_recognition as sr
+        from faster_whisper import WhisperModel
+
+        self.get_logger().info("Loading installed offline translation packages")
+        self.translator = OfflineTranslator(self.config.language)
+
+        self.get_logger().info(f"Loading Whisper model from {self.config.model_path}")
+        self.model = WhisperModel(
+            str(self.config.model_path),
+            device=self.config.device,
+            compute_type="int8",
+            local_files_only=True,
+        )
 
         self.recognizer = sr.Recognizer()
         self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 0.8
 
-    def _setup_translation(self):
-        argostranslate.package.update_package_index()
-        available = argostranslate.package.get_available_packages()
-        for from_c, to_c in [("fr", "en"), ("en", "fr")]:
-            installed = argostranslate.package.get_installed_packages()
-            if not any(p.from_code == from_c and p.to_code == to_c for p in installed):
-                self.get_logger().info(f"Installation du pack {from_c} -> {to_c}...")
-                pkg = next(
-                    filter(
-                        lambda x: x.from_code == from_c and x.to_code == to_c,
-                        available,
-                    )
-                )
-                argostranslate.package.install_from_path(pkg.download())
+    def translate(self, text: str, source: str, target: str) -> str:
+        if self.translator is None:
+            raise RuntimeError("Translation is unavailable in mock audio mode")
+        return self.translator.translate(text, source, target)
 
-    def traduire(self, texte, source, cible):
-        return argostranslate.translate.translate(texte, source, cible)
+    def speak(self, text: str, language: str) -> None:
+        if self.config.mock_audio:
+            self.get_logger().info(f"[MOCK ROBOT ({language})] {text}")
+            return
 
-    def parler(self, texte, langue):
-        model_path = os.path.expanduser(VOICE_FR if langue == "fr" else VOICE_EN)
-        out_wav = "/dev/shm/voice.wav"
+        model_path = (
+            self.config.french_voice_path
+            if language == "fr"
+            else self.config.english_voice_path
+        )
+        self.get_logger().info(f"[ROBOT ({language})] {text}")
+        subprocess.run(
+            [
+                "piper",
+                "--model",
+                str(model_path),
+                "--output_file",
+                str(self.config.playback_path),
+            ],
+            input=text,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            [
+                "mpv",
+                "--no-video",
+                "--really-quiet",
+                str(self.config.playback_path),
+            ],
+            check=True,
+        )
 
-        self.get_logger().info(f"[ROBOT ({langue})] {texte}")
-        cmd = f"echo '{texte}' | piper --model {model_path} --output_file {out_wav}"
-        os.system(cmd)
-        subprocess.run(["mpv", "--no-video", "--really-quiet", out_wav])
+    def announce_startup(self) -> None:
+        self.speak("Système de traduction activé.", "fr")
+        self.speak("Translation system activated.", "en")
 
-    def annoncer_demarrage(self):
-        print(f"\n{GREEN}{BOLD}--- DÉMARRAGE DU ROBOT ---{RESET}")
-        self.parler("Système de traduction activé.", "fr")
-        self.parler("Translation system activated.", "en")
+    def cleanup(self) -> None:
+        for path in (self.config.capture_path, self.config.playback_path):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
-    def nettoyer(self):
-        if os.path.exists(TEMP_AUDIO):
-            os.remove(TEMP_AUDIO)
+    def listen_loop(self) -> None:
+        if self.config.mock_audio:
+            self.get_logger().info("Mock translator ready; spinning without audio hardware")
+            rclpy.spin(self)
+            return
 
-    def boucle_ecoute(self):
-        self.annoncer_demarrage()
+        import speech_recognition as sr
 
-        with sr.Microphone() as source:
-            print(f"\n{GREEN}=== ROBOT PRÊT ==={RESET}")
+        self.announce_startup()
+        device_index = (
+            None if self.config.audio_device == -1 else self.config.audio_device
+        )
+        with sr.Microphone(device_index=device_index) as source:
+            self.get_logger().info("Translator ready")
             self.recognizer.adjust_for_ambient_noise(source, duration=1)
 
             while rclpy.ok():
                 try:
-                    print(f"{YELLOW}Écoute...{RESET}", end="\r")
                     audio = self.recognizer.listen(
                         source, timeout=None, phrase_time_limit=10
                     )
+                    self.config.capture_path.write_bytes(audio.get_wav_data())
 
-                    with open(TEMP_AUDIO, "wb") as f:
-                        f.write(audio.get_wav_data())
-
-                    segments, info = self.model.transcribe(
-                        TEMP_AUDIO, beam_size=5, vad_filter=True
+                    language = (
+                        None if self.config.language == "auto" else self.config.language
                     )
-                    texte = "".join([s.text for s in segments]).strip()
+                    segments, info = self.model.transcribe(
+                        str(self.config.capture_path),
+                        beam_size=5,
+                        vad_filter=True,
+                        language=language,
+                    )
+                    text = "".join(segment.text for segment in segments).strip()
+                    if not text or info.language_probability <= 0.4:
+                        continue
 
-                    if texte and info.language_probability > 0.4:
-                        print(f"{GREEN}{BOLD}[MOI ({info.language})]{RESET} {texte}")
-
-                        if info.language == "fr":
-                            trad = self.traduire(texte, "fr", "en")
-                            self.parler(trad, "en")
-                        elif info.language == "en":
-                            trad = self.traduire(texte, "en", "fr")
-                            self.parler(trad, "fr")
-                        else:
-                            continue
-
-                        msg = String()
-                        msg.data = trad
-                        self.publisher_.publish(msg)
+                    if info.language == "fr":
+                        translated = self.translate(text, "fr", "en")
+                        self.speak(translated, "en")
+                    elif info.language == "en":
+                        translated = self.translate(text, "en", "fr")
+                        self.speak(translated, "fr")
                     else:
-                        print(".", end="", flush=True)
+                        continue
 
+                    self.publisher_.publish(String(data=translated))
                 except KeyboardInterrupt:
                     raise
-                except Exception as e:
-                    print(f"\n{RED}Erreur : {e}{RESET}")
+                except Exception as exc:
+                    self.get_logger().error(f"Legacy translator cycle failed: {exc}")
 
 
-def main(args=None):
+def main(args=None) -> None:
     rclpy.init(args=args)
-    node = TranslatorNode()
-
+    node: TranslatorNode | None = None
     try:
-        node.boucle_ecoute()
+        node = TranslatorNode()
+        node.listen_loop()
+    except (ConfigurationError, TranslationConfigurationError) as exc:
+        rclpy.logging.get_logger("translator_node").fatal(str(exc))
+        raise SystemExit(2) from exc
     except KeyboardInterrupt:
         pass
     finally:
-        node.parler("Fermeture du traducteur. Au revoir.", "fr")
-        node.parler("Shutting down. Goodbye.", "en")
-        node.nettoyer()
-        node.destroy_node()
-        rclpy.shutdown()
+        if node is not None:
+            node.cleanup()
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":
