@@ -39,6 +39,10 @@ class ReservationController extends Controller
         $reservation = Reservation::with('bookingSession.room')->where('uuid', $uuid)->firstOrFail();
 
         if ($reservation->status !== 'pending') {
+            $errorCode = $reservation->status === 'expired'
+                ? 'expired'
+                : 'already_used';
+
             ActivityLog::create([
                 'action' => 'validation_failed',
                 'description' => "Échec de validation : la réservation de {$reservation->customer_name} est en {$reservation->status}.",
@@ -54,7 +58,7 @@ class ReservationController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => "Cette réservation ne peut pas être validée (Statut actuel : {$reservation->status}).",
-                'error_code' => 'already_used',
+                'error_code' => $errorCode,
                 'data' => $this->reservationPayload($reservation),
             ], 422);
         }
@@ -122,6 +126,7 @@ class ReservationController extends Controller
             'customer_name' => $reservation->customer_name,
             'customer_email' => $reservation->customer_email,
             'status' => $reservation->status,
+            'room_id' => $session?->room_id,
             'room' => $session?->room?->name,
             'date' => optional($session?->date)->format('Y-m-d'),
             'start_at' => $session?->start_at,

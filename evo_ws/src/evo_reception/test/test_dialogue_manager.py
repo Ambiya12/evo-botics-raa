@@ -5,6 +5,7 @@ from evo_reception.dialogue_manager import (
     DialogueManager,
     DialogueState,
 )
+from evo_reception.qr_integration import QrValidationOutcome
 
 
 def start_session(manager: DialogueManager) -> None:
@@ -31,10 +32,13 @@ def test_happy_path_reaches_arrival_and_resets() -> None:
 
     manager.handle_event(DialogueEvent.QR_DETECTED)
     assert manager.state == DialogueState.VERIFYING_QR
-    assert manager.handle_event(DialogueEvent.QR_VALID).speech == (
+    assert manager.handle_qr_result(
+        QrValidationOutcome.VALID, destination_id="room-42"
+    ).speech == (
         "guidance_start",
     )
     assert manager.state == DialogueState.READY_TO_GUIDE
+    assert manager.destination_id == "room-42"
 
     assert not manager.handle_event(DialogueEvent.NAVIGATION_STARTED).accepted
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
@@ -120,3 +124,17 @@ def test_qr_cannot_be_accepted_before_prompt_completes() -> None:
 
     assert not transition.accepted
     assert manager.state == DialogueState.WAITING_FOR_QR
+
+
+def test_unverified_qr_result_cannot_skip_to_ready() -> None:
+    manager = DialogueManager()
+    start_session(manager)
+    manager.handle_intent("reservation")
+
+    transition = manager.handle_qr_result(
+        QrValidationOutcome.VALID, destination_id="room-42"
+    )
+
+    assert not transition.accepted
+    assert manager.state == DialogueState.WAITING_FOR_QR
+    assert manager.destination_id is None

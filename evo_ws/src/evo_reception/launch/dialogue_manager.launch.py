@@ -19,6 +19,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             "state_topic", default_value="/reception/dialogue/state"
         ),
+        DeclareLaunchArgument(
+            "qr_detections_topic", default_value="/vision/qr/detections"
+        ),
+        DeclareLaunchArgument(
+            "qr_validation_service", default_value="/reception/qr/validate"
+        ),
+        DeclareLaunchArgument("duplicate_cooldown_sec", default_value="5.0"),
 
         Node(
             package="evo_reception",
@@ -39,6 +46,15 @@ def generate_launch_description():
                 "tts_status_topic": LaunchConfiguration("tts_status_topic"),
                 "event_topic": LaunchConfiguration("event_topic"),
                 "state_topic": LaunchConfiguration("state_topic"),
+                "qr_detections_topic": LaunchConfiguration(
+                    "qr_detections_topic"
+                ),
+                "qr_validation_service": LaunchConfiguration(
+                    "qr_validation_service"
+                ),
+                "duplicate_cooldown_sec": ParameterValue(
+                    LaunchConfiguration("duplicate_cooldown_sec"), value_type=float
+                ),
             }],
             output="screen",
         ),

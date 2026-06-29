@@ -15,6 +15,13 @@ def generate_launch_description():
         DeclareLaunchArgument("status_topic", default_value="/reception/qr/status"),
         DeclareLaunchArgument("request_timeout_sec", default_value="3.0"),
         DeclareLaunchArgument("duplicate_cooldown_sec", default_value="5.0"),
+        DeclareLaunchArgument(
+            "validation_service", default_value="/reception/qr/validate"
+        ),
+        DeclareLaunchArgument("enable_legacy_topic_bridge", default_value="false"),
+        DeclareLaunchArgument("mock_mode", default_value="false"),
+        DeclareLaunchArgument("mock_outcome", default_value="valid"),
+        DeclareLaunchArgument("mock_destination_id", default_value="mock-room"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
 
         Node(
@@ -32,6 +39,19 @@ def generate_launch_description():
                 "duplicate_cooldown_sec": ParameterValue(
                     LaunchConfiguration("duplicate_cooldown_sec"),
                     value_type=float,
+                ),
+                "validation_service": LaunchConfiguration("validation_service"),
+                "enable_legacy_topic_bridge": ParameterValue(
+                    LaunchConfiguration("enable_legacy_topic_bridge"),
+                    value_type=bool,
+                ),
+                "mock_mode": ParameterValue(
+                    LaunchConfiguration("mock_mode"),
+                    value_type=bool,
+                ),
+                "mock_outcome": LaunchConfiguration("mock_outcome"),
+                "mock_destination_id": LaunchConfiguration(
+                    "mock_destination_id"
                 ),
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
             }],

@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 
 from evo_reception_interfaces.msg import IntentResult
+from evo_reception_interfaces.srv import ValidateQr
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -13,6 +14,11 @@ from evo_reception.dialogue_manager import (
     DialogueManager,
     DialogueState,
     Transition,
+)
+from evo_reception.qr_integration import (
+    QrScanGate,
+    QrValidationOutcome,
+    ScanDecision,
 )
 
 
@@ -54,8 +60,23 @@ class DialogueManagerNode(Node):
                 "state_topic", "/reception/dialogue/state"
             ).value
         )
+        qr_detections_topic = str(
+            self.declare_parameter(
+                "qr_detections_topic", "/vision/qr/detections"
+            ).value
+        )
+        qr_validation_service = str(
+            self.declare_parameter(
+                "qr_validation_service", "/reception/qr/validate"
+            ).value
+        )
+        duplicate_cooldown_sec = float(
+            self.declare_parameter("duplicate_cooldown_sec", 5.0).value
+        )
 
         self.manager = DialogueManager(max_retries=max_retries)
+        self.qr_scan_gate = QrScanGate(duplicate_cooldown_sec)
+        self.qr_request_token = 0
         self.deadline: float | None = None
         self.tts_request_publisher = self.create_publisher(
             String, tts_request_topic, 10
@@ -73,6 +94,12 @@ class DialogueManagerNode(Node):
             String, tts_status_topic, self.on_tts_status, state_qos
         )
         self.create_subscription(String, event_topic, self.on_external_event, 10)
+        self.create_subscription(
+            String, qr_detections_topic, self.on_qr_detection, 10
+        )
+        self.qr_validation_client = self.create_client(
+            ValidateQr, qr_validation_service
+        )
         self.create_timer(timer_period_sec, self.on_timer)
         self.publish_state()
         self.get_logger().info(
@@ -104,12 +131,94 @@ class DialogueManagerNode(Node):
             DialogueEvent.TTS_COMPLETED,
             DialogueEvent.TTS_FAILED,
             DialogueEvent.INACTIVITY_TIMEOUT,
+            DialogueEvent.QR_DETECTED,
+            DialogueEvent.QR_VALID,
+            DialogueEvent.QR_INVALID,
+            DialogueEvent.QR_FAILED,
         }:
             self.get_logger().warning(
                 f"Ignoring internally owned dialogue event: {event.value}"
             )
             return
         self.apply(self.manager.handle_event(event))
+
+    def on_qr_detection(self, message: String) -> None:
+        acceptance = self.qr_scan_gate.accept(
+            message.data,
+            self.manager.state.value,
+            self.manager.qr_prompt_completed,
+        )
+        if acceptance.decision in {
+            ScanDecision.IGNORED_STATE,
+            ScanDecision.DUPLICATE,
+            ScanDecision.BUSY,
+        }:
+            return
+
+        detected = self.manager.handle_event(DialogueEvent.QR_DETECTED)
+        self.apply(detected)
+        if not detected.accepted:
+            return
+        if acceptance.decision == ScanDecision.INVALID:
+            self.apply(
+                self.manager.handle_qr_result(QrValidationOutcome.INVALID)
+            )
+            return
+
+        if not self.qr_validation_client.service_is_ready():
+            self.qr_scan_gate.complete()
+            self.apply(
+                self.manager.handle_qr_result(QrValidationOutcome.UNAVAILABLE)
+            )
+            return
+
+        request = ValidateQr.Request()
+        request.qr_payload = acceptance.payload
+        self.qr_request_token += 1
+        request_token = self.qr_request_token
+        request.request_id = str(request_token)
+        future = self.qr_validation_client.call_async(request)
+        future.add_done_callback(
+            lambda completed: self.on_qr_validation_response(
+                completed, request_token
+            )
+        )
+
+    def on_qr_validation_response(self, future, request_token: int) -> None:
+        if request_token != self.qr_request_token:
+            return
+        self.qr_scan_gate.complete()
+        try:
+            response = future.result()
+        except Exception as exc:
+            self.get_logger().error(f"QR validation service failed: {exc}")
+            self.apply(
+                self.manager.handle_qr_result(QrValidationOutcome.UNAVAILABLE)
+            )
+            return
+
+        outcomes = {
+            ValidateQr.Response.VALID: QrValidationOutcome.VALID,
+            ValidateQr.Response.INVALID: QrValidationOutcome.INVALID,
+            ValidateQr.Response.EXPIRED: QrValidationOutcome.EXPIRED,
+            ValidateQr.Response.DUPLICATE: QrValidationOutcome.DUPLICATE,
+            ValidateQr.Response.UNAVAILABLE: QrValidationOutcome.UNAVAILABLE,
+        }
+        outcome = outcomes.get(
+            response.outcome, QrValidationOutcome.UNAVAILABLE
+        )
+        if response.request_id != str(request_token):
+            self.get_logger().warning("QR validation response ID did not match request")
+            self.apply(
+                self.manager.handle_qr_result(QrValidationOutcome.UNAVAILABLE)
+            )
+            return
+        self.apply(
+            self.manager.handle_qr_result(
+                outcome,
+                destination_id=response.destination_id,
+            )
+        )
 
     def on_timer(self) -> None:
         if self.deadline is None or time.monotonic() < self.deadline:
@@ -125,6 +234,12 @@ class DialogueManagerNode(Node):
                 f"Ignored invalid transition from {transition.current.value}"
             )
             return
+        if (
+            transition.previous == DialogueState.VERIFYING_QR
+            and transition.current != DialogueState.VERIFYING_QR
+        ):
+            self.qr_request_token += 1
+            self.qr_scan_gate.complete()
         if transition.changed:
             self.publish_state()
         for phrase in transition.speech:

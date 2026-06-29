@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from evo_reception.qr_integration import QrValidationOutcome
+
 
 class DialogueState(str, Enum):
     IDLE = "IDLE"
@@ -61,6 +63,7 @@ class DialogueManager:
         self.retry_count = 0
         self.qr_prompt_completed = False
         self.guidance_announcement_completed = False
+        self.destination_id: str | None = None
 
     def handle_intent(self, intent: str) -> Transition:
         normalized = intent.strip().lower()
@@ -144,29 +147,9 @@ class DialogueManager:
                 )
 
         elif self.state == DialogueState.VERIFYING_QR:
-            if event == DialogueEvent.QR_VALID:
-                self.state = DialogueState.READY_TO_GUIDE
-                self.guidance_announcement_completed = False
-                return Transition(
-                    previous, self.state, True, ("guidance_start",)
-                )
-            if event == DialogueEvent.QR_INVALID:
-                if self.retry_count < self.max_retries:
-                    self.retry_count += 1
-                    self.state = DialogueState.WAITING_FOR_QR
-                    self.qr_prompt_completed = False
-                    return Transition(
-                        previous, self.state, True, ("invalid_qr",)
-                    )
-                self.state = DialogueState.ERROR
-                return Transition(
-                    previous, self.state, True, ("invalid_qr",)
-                )
-            if event == DialogueEvent.QR_FAILED:
-                self.state = DialogueState.ERROR
-                return Transition(
-                    previous, self.state, True, ("validation_unavailable",)
-                )
+            # QR outcomes enter through handle_qr_result so a valid result must
+            # carry the verified stable destination ID.
+            pass
 
         elif self.state == DialogueState.READY_TO_GUIDE:
             if event == DialogueEvent.TTS_COMPLETED:
@@ -209,11 +192,67 @@ class DialogueManager:
 
         return self._invalid(previous)
 
+    def handle_qr_result(
+        self,
+        outcome: QrValidationOutcome,
+        destination_id: str = "",
+    ) -> Transition:
+        previous = self.state
+        if self.state != DialogueState.VERIFYING_QR:
+            return self._invalid(previous)
+
+        if outcome == QrValidationOutcome.VALID:
+            stable_destination = destination_id.strip()
+            if not stable_destination:
+                self.state = DialogueState.ERROR
+                return Transition(
+                    previous,
+                    self.state,
+                    True,
+                    ("validation_unavailable",),
+                )
+            self.destination_id = stable_destination
+            self.state = DialogueState.READY_TO_GUIDE
+            self.guidance_announcement_completed = False
+            return Transition(
+                previous, self.state, True, ("guidance_start",)
+            )
+
+        if outcome == QrValidationOutcome.INVALID:
+            return self._handle_rejected_qr(previous, "invalid_qr", use_retry=True)
+        if outcome == QrValidationOutcome.EXPIRED:
+            self.state = DialogueState.ERROR
+            return Transition(previous, self.state, True, ("expired_qr",))
+        if outcome == QrValidationOutcome.DUPLICATE:
+            self.state = DialogueState.WAITING_FOR_QR
+            self.qr_prompt_completed = False
+            return Transition(previous, self.state, True, ("duplicate_qr",))
+
+        self.state = DialogueState.ERROR
+        return Transition(
+            previous, self.state, True, ("validation_unavailable",)
+        )
+
+    def _handle_rejected_qr(
+        self,
+        previous: DialogueState,
+        phrase: str,
+        use_retry: bool,
+    ) -> Transition:
+        if use_retry and self.retry_count < self.max_retries:
+            self.retry_count += 1
+            self.state = DialogueState.WAITING_FOR_QR
+            self.qr_prompt_completed = False
+            return Transition(previous, self.state, True, (phrase,))
+        self.state = DialogueState.ERROR
+        return Transition(previous, self.state, True, (phrase,))
+
     def _reset(self) -> None:
         self.state = DialogueState.IDLE
         self.retry_count = 0
         self.qr_prompt_completed = False
         self.guidance_announcement_completed = False
+        self.destination_id = None
 
     def _invalid(self, previous: DialogueState) -> Transition:
         return Transition(previous, self.state, False)
