@@ -1,0 +1,41 @@
+priority:
+  - cancel
+  - repeat
+  - check_in
+  - meeting_room
+  - reservation
+  - help
+
+intents:
+  reservation:
+    - reservation
+    - booking
+    - booked a visit
+    - have a reservation
+    - have a booking
+  check_in:
+    - check in
+    - checking in
+    - sign in
+    - here to check in
+  meeting_room:
+    - meeting room
+    - conference room
+    - meeting space
+    - find my meeting room
+  help:
+    - help
+    - assistance
+    - need help
+    - need assistance
+  repeat:
+    - repeat
+    - repeat that
+    - say that again
+    - could you repeat
+  cancel:
+    - cancel
+    - stop this request
+    - stop the request
+    - never mind
+    - end the request

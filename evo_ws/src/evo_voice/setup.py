@@ -23,6 +23,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "intent_detector_node = evo_voice.intent_detector_node:main",
             "stt_node = evo_voice.stt_node:main",
             "tts_node = evo_voice.tts_node:main",
             "translator_node = evo_voice.translator_fr_en:main",
