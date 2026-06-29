@@ -3,8 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import shutil
+import tempfile
+from typing import TYPE_CHECKING
 
-from rclpy.node import Node
+if TYPE_CHECKING:
+    from rclpy.node import Node
+
+DEFAULT_CAPTURE_PATH = Path(tempfile.gettempdir()) / "evo_voice_capture.wav"
+DEFAULT_PLAYBACK_PATH = Path(tempfile.gettempdir()) / "evo_voice_playback.wav"
 
 
 class ConfigurationError(ValueError):
@@ -24,7 +30,7 @@ class VoiceConfig:
     mock_audio: bool
 
     @classmethod
-    def from_node(cls, node: Node) -> "VoiceConfig":
+    def from_node(cls, node: "Node") -> "VoiceConfig":
         config = cls(
             model_path=_path(node.declare_parameter("model_path", "").value),
             device=str(node.declare_parameter("device", "cpu").value).strip(),
@@ -38,12 +44,12 @@ class VoiceConfig:
             ),
             capture_path=_path(
                 node.declare_parameter(
-                    "capture_path", "/tmp/evo_voice_capture.wav"
+                    "capture_path", str(DEFAULT_CAPTURE_PATH)
                 ).value
             ),
             playback_path=_path(
                 node.declare_parameter(
-                    "playback_path", "/tmp/evo_voice_playback.wav"
+                    "playback_path", str(DEFAULT_PLAYBACK_PATH)
                 ).value
             ),
             mock_audio=bool(node.declare_parameter("mock_audio", True).value),

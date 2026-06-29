@@ -1,3 +1,6 @@
+from pathlib import Path
+import tempfile
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -6,6 +9,8 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
+    temporary_directory = Path(tempfile.gettempdir())
+
     return LaunchDescription([
         DeclareLaunchArgument("model_path", default_value=""),
         DeclareLaunchArgument("device", default_value="cpu"),
@@ -14,10 +19,12 @@ def generate_launch_description():
         DeclareLaunchArgument("french_voice_path", default_value=""),
         DeclareLaunchArgument("english_voice_path", default_value=""),
         DeclareLaunchArgument(
-            "capture_path", default_value="/tmp/evo_voice_capture.wav"
+            "capture_path",
+            default_value=str(temporary_directory / "evo_voice_capture.wav"),
         ),
         DeclareLaunchArgument(
-            "playback_path", default_value="/tmp/evo_voice_playback.wav"
+            "playback_path",
+            default_value=str(temporary_directory / "evo_voice_playback.wav"),
         ),
         DeclareLaunchArgument("mock_audio", default_value="true"),
 
