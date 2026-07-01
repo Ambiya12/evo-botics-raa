@@ -1,9 +1,12 @@
+import pytest
+
 from evo_navigation.navigation_orchestrator import (
     MockNavigator,
     NavigationGates,
     NavigationOrchestrator,
     NavigationOutcome,
     NavigationState,
+    validate_navigation_mode,
 )
 from evo_navigation.waypoints import Waypoint, WaypointRegistry
 
@@ -53,6 +56,24 @@ def test_mock_navigation_success() -> None:
         NavigationState.ARRIVED,
     ]
     assert [waypoint.destination_id for waypoint in navigator.calls] == ["42"]
+
+
+def test_mock_mode_ignores_real_navigation_opt_in() -> None:
+    assert validate_navigation_mode(True, True, True) == "mock"
+
+
+def test_real_navigation_requires_explicit_opt_in() -> None:
+    with pytest.raises(ValueError, match="locked"):
+        validate_navigation_mode(False, False, True)
+
+
+def test_real_navigation_requires_validated_waypoints() -> None:
+    with pytest.raises(ValueError, match="hardware_validated"):
+        validate_navigation_mode(False, True, False)
+
+
+def test_real_navigation_requires_both_safety_keys() -> None:
+    assert validate_navigation_mode(False, True, True) == "real"
 
 
 def test_unknown_destination_fails_without_movement() -> None:

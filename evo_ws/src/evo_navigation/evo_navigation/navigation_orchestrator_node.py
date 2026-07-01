@@ -25,6 +25,7 @@ from evo_navigation.navigation_orchestrator import (
     NavigationOutcome,
     NavigationResult,
     NavigationState,
+    validate_navigation_mode,
 )
 from evo_navigation.waypoints import Waypoint, WaypointConfigurationError, WaypointRegistry
 
@@ -132,6 +133,9 @@ class NavigationOrchestratorNode(Node):
         self.mock_navigation = bool(
             self.declare_parameter("mock_navigation", True).value
         )
+        self.allow_real_navigation = bool(
+            self.declare_parameter("allow_real_navigation", False).value
+        )
         mock_outcome_value = str(
             self.declare_parameter("mock_outcome", "arrived").value
         ).strip().lower()
@@ -176,10 +180,11 @@ class NavigationOrchestratorNode(Node):
             raise ValueError("'navigation_timeout_sec' must be greater than zero")
 
         self.registry = WaypointRegistry.from_yaml(registry_path)
-        if not self.mock_navigation and not self.registry.hardware_validated:
-            raise WaypointConfigurationError(
-                "Real navigation requires hardware_validated: true in the waypoint registry"
-            )
+        self.navigation_mode = validate_navigation_mode(
+            self.mock_navigation,
+            self.allow_real_navigation,
+            self.registry.hardware_validated,
+        )
 
         if self.mock_navigation:
             try:
@@ -230,9 +235,19 @@ class NavigationOrchestratorNode(Node):
             cancel_callback=self.accept_cancel,
             callback_group=callback_group,
         )
+        if self.mock_navigation:
+            self.get_logger().warning(
+                "STATIONARY SAFETY MODE ACTIVE: mock_navigation=true; "
+                "Nav2 goals will not be sent."
+            )
+        else:
+            self.get_logger().warning(
+                "REAL NAVIGATION MODE ACTIVE: mock_navigation=false and "
+                "allow_real_navigation=true; Nav2 goals may move the robot."
+            )
         self.get_logger().info(
-            f"Navigation orchestrator ready: action={action_name} "
-            f"mock_navigation={self.mock_navigation}"
+            f"Navigation orchestrator ready: mode={self.navigation_mode} "
+            f"action={action_name} waypoint_config={registry_path}"
         )
 
     def current_gates(self) -> NavigationGates:

@@ -4,6 +4,7 @@ from evo_reception.dialogue_manager import (
     DialogueEvent,
     DialogueManager,
     DialogueState,
+    TtsStatusTracker,
 )
 from evo_reception.qr_integration import QrValidationOutcome
 
@@ -152,3 +153,43 @@ def test_return_to_reception_failure_enters_error() -> None:
 
     assert manager.state == DialogueState.ERROR
     assert transition.speech == ("navigation_failed",)
+
+
+def test_tts_status_tracker_ignores_unowned_idle_status() -> None:
+    tracker = TtsStatusTracker()
+
+    assert tracker.update("idle") is None
+
+
+def test_tts_status_tracker_does_not_complete_from_stale_idle() -> None:
+    tracker = TtsStatusTracker()
+    tracker.mark_requested()
+
+    assert tracker.update("idle") is None
+    assert tracker.pending
+
+
+def test_tts_status_tracker_completes_request_only_once() -> None:
+    tracker = TtsStatusTracker()
+    tracker.mark_requested()
+
+    assert tracker.update("speaking") is None
+    assert tracker.update("completed") == DialogueEvent.TTS_COMPLETED
+    assert tracker.update("idle") is None
+
+
+def test_tts_status_tracker_uses_idle_when_completed_was_dropped() -> None:
+    tracker = TtsStatusTracker()
+    tracker.mark_requested()
+
+    assert tracker.update("speaking") is None
+    assert tracker.update("idle") == DialogueEvent.TTS_COMPLETED
+    assert not tracker.pending
+
+
+def test_tts_status_tracker_reports_failure() -> None:
+    tracker = TtsStatusTracker()
+    tracker.mark_requested()
+
+    assert tracker.update("failed") == DialogueEvent.TTS_FAILED
+    assert tracker.update("idle") is None

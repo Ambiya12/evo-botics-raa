@@ -24,6 +24,26 @@ class NavigationOutcome(str, Enum):
     FAILED = "failed"
 
 
+def validate_navigation_mode(
+    mock_navigation: bool,
+    allow_real_navigation: bool,
+    hardware_validated: bool,
+) -> str:
+    """Return the active mode or reject an unsafe real-navigation setup."""
+    if mock_navigation:
+        return "mock"
+    if not allow_real_navigation:
+        raise ValueError(
+            "Real navigation is locked. Set both mock_navigation:=false and "
+            "allow_real_navigation:=true only at a controlled navigation site."
+        )
+    if not hardware_validated:
+        raise ValueError(
+            "Real navigation requires hardware_validated: true in the waypoint registry"
+        )
+    return "real"
+
+
 @dataclass(frozen=True)
 class NavigationGates:
     estop_active: bool

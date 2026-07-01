@@ -13,6 +13,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("waypoint_config_path", default_value=default_waypoints),
         DeclareLaunchArgument("mock_navigation", default_value="true"),
+        DeclareLaunchArgument("allow_real_navigation", default_value="false"),
         DeclareLaunchArgument("mock_outcome", default_value="arrived"),
         DeclareLaunchArgument("navigation_timeout_sec", default_value="120.0"),
         DeclareLaunchArgument(
@@ -36,6 +37,9 @@ def generate_launch_description():
                 "waypoint_config_path": LaunchConfiguration("waypoint_config_path"),
                 "mock_navigation": ParameterValue(
                     LaunchConfiguration("mock_navigation"), value_type=bool
+                ),
+                "allow_real_navigation": ParameterValue(
+                    LaunchConfiguration("allow_real_navigation"), value_type=bool
                 ),
                 "mock_outcome": LaunchConfiguration("mock_outcome"),
                 "navigation_timeout_sec": ParameterValue(

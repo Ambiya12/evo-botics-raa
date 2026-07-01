@@ -111,3 +111,20 @@ def test_unknown_tts_status_does_not_resume_capture() -> None:
     gate.update_tts_status("unexpected")
 
     assert gate.paused
+
+
+def test_audio_overlapping_completed_tts_is_discarded() -> None:
+    gate = CaptureGate()
+    transcriber = MockTranscriber(TranscriptionResult("robot voice", "en", 1.0))
+    pipeline = make_pipeline(transcriber, gate=gate)
+    capture_token = gate.capture_token()
+
+    gate.update_tts_status("speaking")
+    gate.update_tts_status("completed")
+    result = pipeline.process(
+        wav_fixture(amplitude=4000),
+        capture_token=capture_token,
+    )
+
+    assert result is None
+    assert transcriber.calls == 0

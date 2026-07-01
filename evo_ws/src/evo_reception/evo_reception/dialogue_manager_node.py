@@ -19,6 +19,7 @@ from evo_reception.dialogue_manager import (
     DialogueEvent,
     DialogueManager,
     DialogueState,
+    TtsStatusTracker,
     Transition,
 )
 from evo_reception.qr_integration import (
@@ -105,6 +106,7 @@ class DialogueManagerNode(Node):
         self.session_counter = 0
         self.session_id = ""
         self.deadline: float | None = None
+        self.tts_status_tracker = TtsStatusTracker()
         self.tts_request_publisher = self.create_publisher(
             String, tts_request_topic, 10
         )
@@ -120,8 +122,13 @@ class DialogueManagerNode(Node):
         self.create_subscription(
             IntentResult, intent_topic, self.on_intent, 10
         )
+        tts_status_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
         self.create_subscription(
-            String, tts_status_topic, self.on_tts_status, state_qos
+            String, tts_status_topic, self.on_tts_status, tts_status_qos
         )
         self.create_subscription(String, event_topic, self.on_external_event, 10)
         self.create_subscription(
@@ -145,6 +152,10 @@ class DialogueManagerNode(Node):
         )
 
     def on_intent(self, message: IntentResult) -> None:
+        self.get_logger().info(
+            f"Received intent={message.intent} confidence={message.confidence:.2f} "
+            f"state={self.manager.state.value}"
+        )
         if message.intent.strip().lower() == "cancel":
             self.cancel_navigation()
         self.apply(self.manager.handle_intent(message.intent))
@@ -158,26 +169,30 @@ class DialogueManagerNode(Node):
         status = message.data.strip().lower()
         if status == "speaking":
             self.deadline = None
-        elif status == "completed":
-            transition = self.manager.handle_event(DialogueEvent.TTS_COMPLETED)
-            self.apply(transition)
-            if (
-                transition.accepted
-                and self.manager.state == DialogueState.READY_TO_GUIDE
-                and self.manager.guidance_announcement_completed
-            ):
-                self.request_navigation()
-            elif (
-                transition.accepted
-                and self.manager.state == DialogueState.ARRIVED
-                and self.manager.return_to_reception_ready
-            ):
-                self.request_navigation(
-                    destination_id="reception",
-                    returning=True,
-                )
-        elif status == "failed":
+        event = self.tts_status_tracker.update(status)
+        if event == DialogueEvent.TTS_COMPLETED:
+            self.handle_tts_completed()
+        elif event == DialogueEvent.TTS_FAILED:
             self.apply(self.manager.handle_event(DialogueEvent.TTS_FAILED))
+
+    def handle_tts_completed(self) -> None:
+        transition = self.manager.handle_event(DialogueEvent.TTS_COMPLETED)
+        self.apply(transition)
+        if (
+            transition.accepted
+            and self.manager.state == DialogueState.READY_TO_GUIDE
+            and self.manager.guidance_announcement_completed
+        ):
+            self.request_navigation()
+        elif (
+            transition.accepted
+            and self.manager.state == DialogueState.ARRIVED
+            and self.manager.return_to_reception_ready
+        ):
+            self.request_navigation(
+                destination_id="reception",
+                returning=True,
+            )
 
     def on_external_event(self, message: String) -> None:
         try:
@@ -430,7 +445,12 @@ class DialogueManagerNode(Node):
                 self.session_counter += 1
                 self.session_id = f"session-{self.session_counter}"
             self.publish_state()
+            self.get_logger().info(
+                f"Dialogue transition: {transition.previous.value} -> "
+                f"{transition.current.value}"
+            )
         for phrase in transition.speech:
+            self.tts_status_tracker.mark_requested()
             self.tts_request_publisher.publish(String(data=f"phrase:{phrase}"))
         self.refresh_deadline(transition)
         outcome = transition.current.value.lower()

@@ -52,9 +52,8 @@ def generate_launch_description():
         ),
         package_launch(
             "evo_navigation",
-            "orchestrator.launch.py",
+            "stationary_orchestrator.launch.py",
             {
-                "mock_navigation": "true",
                 "mock_outcome": navigation_outcome,
             },
         ),

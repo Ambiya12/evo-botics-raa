@@ -26,6 +26,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument("piper_executable", default_value="piper"),
         DeclareLaunchArgument("audio_player_executable", default_value="mpv"),
+        DeclareLaunchArgument("audio_output_device", default_value=""),
 
         Node(
             package="evo_voice",
@@ -43,6 +44,9 @@ def generate_launch_description():
                 "piper_executable": LaunchConfiguration("piper_executable"),
                 "audio_player_executable": LaunchConfiguration(
                     "audio_player_executable"
+                ),
+                "audio_output_device": LaunchConfiguration(
+                    "audio_output_device"
                 ),
             }],
             output="screen",

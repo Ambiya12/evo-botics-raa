@@ -43,11 +43,13 @@ class PiperSpeechPlayer:
         output_path: Path,
         piper_executable: str,
         audio_player_executable: str,
+        audio_output_device: str = "",
     ) -> None:
         self.model_path = model_path
         self.output_path = output_path
         self.piper_executable = piper_executable
         self.audio_player_executable = audio_player_executable
+        self.audio_output_device = audio_output_device
 
     def play(self, text: str) -> None:
         subprocess.run(
@@ -62,15 +64,15 @@ class PiperSpeechPlayer:
             text=True,
             check=True,
         )
-        subprocess.run(
-            [
-                self.audio_player_executable,
-                "--no-video",
-                "--really-quiet",
-                str(self.output_path),
-            ],
-            check=True,
-        )
+        command = [
+            self.audio_player_executable,
+            "--no-video",
+            "--really-quiet",
+        ]
+        if self.audio_output_device:
+            command.append(f"--audio-device={self.audio_output_device}")
+        command.append(str(self.output_path))
+        subprocess.run(command, check=True)
 
 
 class QueuedTts:

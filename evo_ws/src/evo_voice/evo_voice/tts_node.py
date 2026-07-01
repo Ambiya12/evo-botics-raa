@@ -57,6 +57,9 @@ class TtsNode(Node):
         audio_player_executable = str(
             self.declare_parameter("audio_player_executable", "mpv").value
         ).strip()
+        audio_output_device = str(
+            self.declare_parameter("audio_output_device", "").value
+        ).strip()
 
         self.phrase_book = PhraseBook.from_yaml(phrase_config_path)
         player = self._create_player(
@@ -64,10 +67,11 @@ class TtsNode(Node):
             output_path,
             piper_executable,
             audio_player_executable,
+            audio_output_device,
         )
 
         status_qos = QoSProfile(
-            depth=1,
+            depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
@@ -76,7 +80,8 @@ class TtsNode(Node):
         self.create_subscription(String, request_topic, self.on_speak_request, 10)
         self.get_logger().info(
             f"Queued TTS ready: request={request_topic} status={status_topic} "
-            f"mock_audio={self.mock_audio}"
+            f"mock_audio={self.mock_audio} "
+            f"audio_output_device={audio_output_device or '<system-default>'}"
         )
 
     def _create_player(
@@ -85,6 +90,7 @@ class TtsNode(Node):
         output_path: Path,
         piper_executable: str,
         audio_player_executable: str,
+        audio_output_device: str,
     ):
         if self.mock_audio:
             return MockSpeechPlayer()
@@ -116,6 +122,7 @@ class TtsNode(Node):
             output_path=output_path,
             piper_executable=piper_executable,
             audio_player_executable=audio_player_executable,
+            audio_output_device=audio_output_device,
         )
 
     def on_speak_request(self, message: String) -> None:

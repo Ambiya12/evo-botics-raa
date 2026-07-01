@@ -9,7 +9,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "validation_url",
-            default_value="http://127.0.0.1:8000/api/reservations/validate",
+            default_value="",
         ),
         DeclareLaunchArgument("qr_detections_topic", default_value="/vision/qr/detections"),
         DeclareLaunchArgument("status_topic", default_value="/reception/qr/status"),
@@ -19,7 +19,7 @@ def generate_launch_description():
             "validation_service", default_value="/reception/qr/validate"
         ),
         DeclareLaunchArgument("enable_legacy_topic_bridge", default_value="false"),
-        DeclareLaunchArgument("mock_mode", default_value="false"),
+        DeclareLaunchArgument("mock_mode", default_value="true"),
         DeclareLaunchArgument("mock_outcome", default_value="valid"),
         DeclareLaunchArgument("mock_destination_id", default_value="mock-room"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),

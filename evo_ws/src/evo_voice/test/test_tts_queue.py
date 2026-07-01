@@ -1,4 +1,6 @@
+from pathlib import Path
 from threading import Event, Lock
+from unittest.mock import call, patch
 
 from evo_voice.tts_queue import (
     COMPLETED,
@@ -6,6 +8,7 @@ from evo_voice.tts_queue import (
     IDLE,
     SPEAKING,
     MockSpeechPlayer,
+    PiperSpeechPlayer,
     QueuedTts,
     SpeakRequest,
 )
@@ -87,3 +90,41 @@ def test_playback_failure_publishes_failed_then_idle() -> None:
         assert statuses == [IDLE, SPEAKING, FAILED, IDLE]
     finally:
         queue.shutdown()
+
+
+def test_piper_player_uses_configured_audio_output_without_hardware() -> None:
+    player = PiperSpeechPlayer(
+        model_path=Path("/models/voice.onnx"),
+        output_path=Path("/tmp/evo_voice_tts.wav"),
+        piper_executable="piper",
+        audio_player_executable="mpv",
+        audio_output_device="alsa/default",
+    )
+
+    with patch("evo_voice.tts_queue.subprocess.run") as run:
+        player.play("Hello")
+
+    assert run.call_args_list == [
+        call(
+            [
+                "piper",
+                "--model",
+                "/models/voice.onnx",
+                "--output_file",
+                "/tmp/evo_voice_tts.wav",
+            ],
+            input="Hello",
+            text=True,
+            check=True,
+        ),
+        call(
+            [
+                "mpv",
+                "--no-video",
+                "--really-quiet",
+                "--audio-device=alsa/default",
+                "/tmp/evo_voice_tts.wav",
+            ],
+            check=True,
+        ),
+    ]

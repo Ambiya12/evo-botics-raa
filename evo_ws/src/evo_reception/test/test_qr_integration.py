@@ -13,6 +13,8 @@ from evo_reception.qr_integration import (
     ScanDecision,
     extract_decoded_text,
     outcome_from_error_code,
+    successful_validation_data,
+    validate_backend_configuration,
 )
 
 
@@ -74,6 +76,8 @@ def test_scanner_json_extracts_existing_decoded_text_contract() -> None:
         ("expired", QrValidationOutcome.EXPIRED),
         ("already_used", QrValidationOutcome.DUPLICATE),
         ("api_unreachable", QrValidationOutcome.UNAVAILABLE),
+        ("timeout", QrValidationOutcome.UNAVAILABLE),
+        ("malformed_response", QrValidationOutcome.UNAVAILABLE),
     ],
 )
 def test_bridge_error_codes_map_to_workflow_outcomes(
@@ -81,6 +85,42 @@ def test_bridge_error_codes_map_to_workflow_outcomes(
     outcome: QrValidationOutcome,
 ) -> None:
     assert outcome_from_error_code(error_code) == outcome
+
+
+def test_backend_defaults_can_remain_hardware_free() -> None:
+    assert validate_backend_configuration(True, "", 3.0, 5.0) == ""
+
+
+def test_real_backend_requires_explicit_absolute_url() -> None:
+    with pytest.raises(ValueError, match="validation_url"):
+        validate_backend_configuration(False, "", 3.0, 5.0)
+    with pytest.raises(ValueError, match="absolute HTTP"):
+        validate_backend_configuration(False, "localhost/api", 3.0, 5.0)
+
+
+def test_backend_rejects_invalid_timeout_and_embedded_credentials() -> None:
+    with pytest.raises(ValueError, match="request_timeout_sec"):
+        validate_backend_configuration(True, "", 0.0, 5.0)
+    with pytest.raises(ValueError, match="credentials"):
+        validate_backend_configuration(
+            False,
+            "https://user:secret@example.test/validate",
+            3.0,
+            5.0,
+        )
+
+
+def test_only_approved_backend_success_shape_returns_data() -> None:
+    valid_data = {"room_id": 42}
+
+    assert successful_validation_data(
+        {"status": "success", "data": valid_data}
+    ) == valid_data
+    assert successful_validation_data({"data": valid_data}) is None
+    assert successful_validation_data(
+        {"status": "error", "data": valid_data}
+    ) is None
+    assert successful_validation_data(["unexpected"]) is None
 
 
 def test_scan_outside_waiting_for_qr_never_calls_bridge() -> None:

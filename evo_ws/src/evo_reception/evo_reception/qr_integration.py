@@ -5,6 +5,7 @@ from enum import Enum
 import json
 import time
 from typing import Callable
+from urllib.parse import urlsplit
 
 
 class QrValidationOutcome(str, Enum):
@@ -29,6 +30,34 @@ class ScanAcceptance:
     payload: str = ""
 
 
+def validate_backend_configuration(
+    mock_mode: bool,
+    validation_url: str,
+    request_timeout_sec: float,
+    duplicate_cooldown_sec: float,
+) -> str:
+    """Validate backend settings and return the normalized URL."""
+    errors: list[str] = []
+    url = validation_url.strip()
+    if request_timeout_sec <= 0.0:
+        errors.append("request_timeout_sec must be greater than zero")
+    if duplicate_cooldown_sec < 0.0:
+        errors.append("duplicate_cooldown_sec must be non-negative")
+    if not mock_mode:
+        parsed = urlsplit(url)
+        if not url:
+            errors.append("validation_url is required when mock_mode is false")
+        elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            errors.append("validation_url must be an absolute HTTP(S) URL")
+        elif parsed.username is not None or parsed.password is not None:
+            errors.append("validation_url must not contain credentials")
+    if errors:
+        raise ValueError(
+            "Invalid QR backend configuration: " + "; ".join(errors)
+        )
+    return url
+
+
 def extract_decoded_text(raw_data: str) -> str | None:
     try:
         event = json.loads(raw_data)
@@ -48,9 +77,22 @@ def outcome_from_error_code(error_code: str) -> QrValidationOutcome:
         return QrValidationOutcome.DUPLICATE
     if normalized in {"expired", "expired_reservation", "reservation_expired"}:
         return QrValidationOutcome.EXPIRED
-    if normalized in {"api_unreachable", "unavailable"}:
+    if normalized in {
+        "api_unreachable",
+        "malformed_response",
+        "timeout",
+        "unavailable",
+    }:
         return QrValidationOutcome.UNAVAILABLE
     return QrValidationOutcome.INVALID
+
+
+def successful_validation_data(body: object) -> dict | None:
+    """Return validated response data only for the approved success contract."""
+    if not isinstance(body, dict) or body.get("status") != "success":
+        return None
+    data = body.get("data")
+    return data if isinstance(data, dict) else None
 
 
 class QrScanGate:

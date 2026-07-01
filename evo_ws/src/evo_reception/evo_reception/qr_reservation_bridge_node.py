@@ -19,6 +19,8 @@ from evo_reception.qr_integration import (
     QrValidationOutcome,
     extract_decoded_text,
     outcome_from_error_code,
+    successful_validation_data,
+    validate_backend_configuration,
 )
 
 
@@ -42,7 +44,7 @@ class QrReservationBridgeNode(Node):
             "status_topic", "/reception/qr/status"
         ).value
         self.validation_url = self.declare_parameter(
-            "validation_url", "http://127.0.0.1:8000/api/reservations/validate"
+            "validation_url", ""
         ).value
         self.request_timeout_sec = float(
             self.declare_parameter("request_timeout_sec", 3.0).value
@@ -57,7 +59,13 @@ class QrReservationBridgeNode(Node):
             self.declare_parameter("enable_legacy_topic_bridge", False).value
         )
         self.mock_mode = bool(
-            self.declare_parameter("mock_mode", False).value
+            self.declare_parameter("mock_mode", True).value
+        )
+        self.validation_url = validate_backend_configuration(
+            self.mock_mode,
+            str(self.validation_url),
+            self.request_timeout_sec,
+            self.duplicate_cooldown_sec,
         )
         mock_outcome_value = str(
             self.declare_parameter("mock_outcome", "valid").value
@@ -93,7 +101,8 @@ class QrReservationBridgeNode(Node):
         self.get_logger().info(
             f"QR reservation bridge serving {self.validation_service}, "
             f"legacy_topic_bridge={self.enable_legacy_topic_bridge}, "
-            f"mock_mode={self.mock_mode}, validating with {self.validation_url}"
+            f"mock_mode={self.mock_mode}, "
+            f"backend={'mock' if self.mock_mode else 'configured-real'}"
         )
 
     def on_qr_detection(self, msg: String) -> None:
@@ -177,7 +186,13 @@ class QrReservationBridgeNode(Node):
                 self.validation_url, {"qr_payload": qr_payload}
             )
             body = api_response.get("body", {})
-            data = body.get("data", {}) if isinstance(body, dict) else {}
+            data = successful_validation_data(body)
+            if data is None:
+                return BridgeValidation(
+                    QrValidationOutcome.UNAVAILABLE,
+                    "Reservation service returned an invalid response.",
+                    error_code="malformed_response",
+                )
             reservation = self.reservation_from_response(data)
             destination_id = self.destination_id_from_response(body, data)
             if not destination_id:

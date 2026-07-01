@@ -54,6 +54,9 @@ class IntentDetectorNode(Node):
         result.confidence = match.confidence
         result.source_transcript = match.source_transcript
         self.result_publisher.publish(result)
+        self.get_logger().info(
+            f"Published intent={result.intent} confidence={result.confidence:.2f}"
+        )
 
 
 def main(args=None) -> None:

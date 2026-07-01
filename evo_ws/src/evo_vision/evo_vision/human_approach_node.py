@@ -96,7 +96,14 @@ class HumanApproachNode(Node):
         self.create_timer(0.1, self.on_timer)
         self.get_logger().info(
             f"Human approach filter ready: detections={detections_topic} "
-            f"approach={approach_topic}"
+            f"approach={approach_topic} zone={self.zone_id} "
+            f"distance_m={config.min_distance_m}..{config.max_distance_m} "
+            f"normalized_zone=({config.zone_min_x},{config.zone_min_y})"
+            f"..({config.zone_max_x},{config.zone_max_y}) "
+            f"confidence>={config.min_confidence} "
+            f"debounce_frames={config.debounce_frames} "
+            f"absence_reset_sec={config.absence_reset_sec} "
+            f"cooldown_sec={config.cooldown_sec}"
         )
 
     def on_detection(self, message: PersonDetection) -> None:

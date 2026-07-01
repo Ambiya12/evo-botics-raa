@@ -131,7 +131,7 @@ class SttNode(Node):
             Transcript, transcript_topic, 10
         )
         tts_status_qos = QoSProfile(
-            depth=1,
+            depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
@@ -155,7 +155,11 @@ class SttNode(Node):
 
         self.get_logger().info(
             f"STT ready: transcript={transcript_topic} "
-            f"tts_status={tts_status_topic} mock_audio={self.mock_audio}"
+            f"tts_status={tts_status_topic} mock_audio={self.mock_audio} "
+            f"microphone_device={self.microphone_device} language={language} "
+            f"vad_rms_threshold={vad_rms_threshold} "
+            f"minimum_confidence={minimum_confidence} "
+            "tts_capture_suppression=enabled"
         )
 
     @staticmethod
@@ -224,6 +228,7 @@ class SttNode(Node):
                     if self.capture_gate.paused:
                         self.stop_event.wait(0.05)
                         continue
+                    capture_token = self.capture_gate.capture_token()
                     try:
                         audio = recognizer.listen(
                             source,
@@ -234,14 +239,20 @@ class SttNode(Node):
                         continue
                     if self.stop_event.is_set():
                         break
-                    if not self.capture_gate.paused:
-                        self.process_audio(audio.get_wav_data())
+                    self.process_audio(
+                        audio.get_wav_data(),
+                        capture_token=capture_token,
+                    )
         except Exception as exc:
             self.get_logger().error(f"Microphone capture stopped: {exc}")
 
-    def process_audio(self, wav_data: bytes) -> None:
+    def process_audio(
+        self,
+        wav_data: bytes,
+        capture_token: int | None = None,
+    ) -> None:
         captured_at = self.get_clock().now().to_msg()
-        result = self.pipeline.process(wav_data)
+        result = self.pipeline.process(wav_data, capture_token=capture_token)
         if result is None:
             return
         message = Transcript()
@@ -252,6 +263,10 @@ class SttNode(Node):
             float(result.confidence) if result.confidence is not None else -1.0
         )
         self.transcript_publisher.publish(message)
+        self.get_logger().info(
+            f"Published transcript: language={message.language or '<unknown>'} "
+            f"confidence={message.confidence:.2f} characters={len(message.text)}"
+        )
 
     def on_transcription_error(self, error: Exception) -> None:
         self.get_logger().error(f"Transcription failed: {error}")

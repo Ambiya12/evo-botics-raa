@@ -32,6 +32,42 @@ class DialogueEvent(str, Enum):
     INACTIVITY_TIMEOUT = "inactivity_timeout"
 
 
+class TtsStatusTracker:
+    """Correlates TTS statuses with one dialogue-owned speech request."""
+
+    def __init__(self) -> None:
+        self.pending = False
+        self.speaking_seen = False
+
+    def mark_requested(self) -> None:
+        self.pending = True
+        self.speaking_seen = False
+
+    def update(self, status: str) -> DialogueEvent | None:
+        normalized = status.strip().lower()
+        if not self.pending:
+            return None
+        if normalized == "speaking":
+            self.speaking_seen = True
+            return None
+        if normalized == "completed":
+            self.pending = False
+            self.speaking_seen = False
+            return DialogueEvent.TTS_COMPLETED
+        if normalized == "failed":
+            self.pending = False
+            self.speaking_seen = False
+            return DialogueEvent.TTS_FAILED
+        if normalized == "idle" and self.speaking_seen:
+            # QueuedTts publishes completed and idle back-to-back. If DDS
+            # drops completed, idle is a safe completion fallback because a
+            # dialogue-owned request was observed speaking and is still pending.
+            self.pending = False
+            self.speaking_seen = False
+            return DialogueEvent.TTS_COMPLETED
+        return None
+
+
 SUPPORTED_RECEPTION_INTENTS = {
     "reservation",
     "check_in",

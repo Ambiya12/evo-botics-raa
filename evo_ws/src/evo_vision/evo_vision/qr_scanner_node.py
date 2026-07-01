@@ -54,6 +54,20 @@ class QrScannerNode(Node):
         )
         self.max_width = int(self.declare_parameter("max_width", 640).value)
         self.decoder_backend = self.declare_parameter("decoder_backend", "auto").value
+        requested_backend = str(self.decoder_backend).strip().lower()
+        errors = []
+        if self.cooldown_sec < 0.0:
+            errors.append("cooldown_sec must be non-negative")
+        if self.min_scan_interval_sec < 0.0:
+            errors.append("min_scan_interval_sec must be non-negative")
+        if self.max_width < 0:
+            errors.append("max_width must be non-negative")
+        if requested_backend not in {"auto", "opencv", "pyzbar", "zbar"}:
+            errors.append("decoder_backend must be auto, opencv, pyzbar, or zbar")
+        if errors:
+            raise ValueError(
+                "Invalid QR scanner configuration: " + "; ".join(errors)
+            )
 
         self.opencv_decoder_available = opencv_has_quirc()
         self.pyzbar_available = pyzbar_decode is not None
@@ -85,7 +99,10 @@ class QrScannerNode(Node):
             )
         else:
             self.get_logger().info(
-                f"QR scanner subscribed to {self.camera_topic} using {self.selected_backend()}"
+                f"QR scanner subscribed to {self.camera_topic} "
+                f"using {self.selected_backend()} cooldown_sec={self.cooldown_sec} "
+                f"min_scan_interval_sec={self.min_scan_interval_sec} "
+                f"max_width={self.max_width}"
             )
 
     def selected_backend(self) -> Optional[str]:

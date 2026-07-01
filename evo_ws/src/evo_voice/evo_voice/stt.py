@@ -6,7 +6,7 @@ from io import BytesIO
 import math
 from pathlib import Path
 import sys
-from threading import Event
+from threading import Event, Lock
 from typing import Callable, Protocol
 import wave
 
@@ -28,17 +28,34 @@ class CaptureGate:
 
     def __init__(self) -> None:
         self._tts_speaking = Event()
+        self._lock = Lock()
+        self._tts_epoch = 0
 
     @property
     def paused(self) -> bool:
         return self._tts_speaking.is_set()
 
+    def capture_token(self) -> int:
+        with self._lock:
+            return self._tts_epoch
+
+    def allows(self, capture_token: int) -> bool:
+        with self._lock:
+            return (
+                not self._tts_speaking.is_set()
+                and capture_token == self._tts_epoch
+            )
+
     def update_tts_status(self, status: str) -> None:
         normalized = status.strip().lower()
         if normalized == "speaking":
-            self._tts_speaking.set()
+            with self._lock:
+                if not self._tts_speaking.is_set():
+                    self._tts_epoch += 1
+                self._tts_speaking.set()
         elif normalized in {"idle", "completed", "failed"}:
-            self._tts_speaking.clear()
+            with self._lock:
+                self._tts_speaking.clear()
 
 
 class WavEnergyVad:
@@ -138,8 +155,20 @@ class SttPipeline:
         self.minimum_confidence = minimum_confidence
         self.error_callback = error_callback
 
-    def process(self, wav_data: bytes) -> TranscriptionResult | None:
-        if self.capture_gate.paused or not self.vad.contains_speech(wav_data):
+    def process(
+        self,
+        wav_data: bytes,
+        capture_token: int | None = None,
+    ) -> TranscriptionResult | None:
+        token = (
+            self.capture_gate.capture_token()
+            if capture_token is None
+            else capture_token
+        )
+        if (
+            not self.capture_gate.allows(token)
+            or not self.vad.contains_speech(wav_data)
+        ):
             return None
 
         try:
@@ -150,7 +179,7 @@ class SttPipeline:
             return None
 
         # TTS may have started while transcription was running.
-        if self.capture_gate.paused:
+        if not self.capture_gate.allows(token):
             return None
 
         text = result.text.strip()
