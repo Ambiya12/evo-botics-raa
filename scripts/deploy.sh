@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_DIR="${ROOT_DIR}/evo_ws/src"
 JETSON_IP="${JETSON_IP:-}"
-JETSON_USER="${JETSON_USER:-evobotics}"
+JETSON_USER="${JETSON_USER:-jetson}"
 JETSON_WS="${JETSON_WS:-/home/${JETSON_USER}/evo_ws}"
 JETSON_WS="${JETSON_WS%/}"
 JETSON_TARGET="${JETSON_USER}@${JETSON_IP}"
@@ -14,7 +14,7 @@ remote_quote() {
 }
 
 if [[ -z "$JETSON_IP" ]]; then
-  echo "Set JETSON_IP before running. Example: JETSON_IP=192.168.1.50 ./scripts/deploy.sh"
+  echo "Set JETSON_IP before running. Example: JETSON_IP=192.168.1.50 ./scripts/robot.sh setup"
   exit 1
 fi
 
@@ -27,7 +27,6 @@ REMOTE_SRC="${JETSON_WS}/src"
 REMOTE_TMP="${JETSON_WS}/.deploy-src-tmp"
 REMOTE_SRC_Q="$(remote_quote "$REMOTE_SRC")"
 REMOTE_TMP_Q="$(remote_quote "$REMOTE_TMP")"
-JETSON_WS_Q="$(remote_quote "$JETSON_WS")"
 
 echo "[deploy] Preparing ${JETSON_TARGET}:${REMOTE_SRC}"
 ssh "$JETSON_TARGET" "mkdir -p ${REMOTE_SRC_Q}"
@@ -59,14 +58,10 @@ sync_with_tar() {
       "rm -rf ${REMOTE_TMP_Q} && mkdir -p ${REMOTE_TMP_Q} && tar -C ${REMOTE_TMP_Q} -xf - && rm -rf ${REMOTE_SRC_Q} && mv ${REMOTE_TMP_Q} ${REMOTE_SRC_Q}"
 }
 
-echo "[deploy] Syncing workspace to ${JETSON_TARGET}:${REMOTE_SRC}"
+echo "[deploy] Syncing local evo_ws/src to ${JETSON_TARGET}:${REMOTE_SRC}"
 if ! rsync "${RSYNC_ARGS[@]}" "$SRC_DIR/" "${JETSON_TARGET}:${REMOTE_SRC}/"; then
   echo "[deploy] rsync failed; this can happen with macOS openrsync. Retrying without rsync."
   sync_with_tar
 fi
 
-echo "[deploy] Building on Jetson"
-BUILD_CMD="source /opt/ros/humble/setup.bash && cd ${JETSON_WS_Q} && colcon build --symlink-install"
-ssh "$JETSON_TARGET" "bash -lc $(remote_quote "$BUILD_CMD")"
-
-echo "[deploy] Completed"
+echo "[deploy] Completed host sync. Docker copy/build is handled by ./scripts/robot.sh setup"

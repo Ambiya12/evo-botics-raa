@@ -1,10 +1,17 @@
-# Copier ce fichier en `config.local.sh` (gitignoré) pour surcharger la config locale.
+# Copy this file to `config.local.sh` (gitignored) for local overrides.
 #   cp config.local.sh.example config.local.sh
-# Ou utiliser : ./robot.sh config ip 10.10.220.132  (écrit automatiquement ici)
+# Or use: ./scripts/robot.sh config ip <jetson-ip>
 #
-# Utiliser la forme `: "${VAR:=valeur}"` pour qu'une variable d'environnement
-# passée à la volée reste prioritaire sur ce fichier.
+# Use `: "${VAR:=value}"` so one-off environment variables stay higher priority.
 
-# : "${JETSON_IP:=10.10.220.132}"
+# : "${JETSON_IP:=<jetson-ip>}"
 # : "${JETSON_USER:=jetson}"
-# : "${CONTAINER:=awesome_elion}"
+# : "${CONTAINER:=auto}"
+# : "${DEFAULT_MAP_NAME:=school_map}"
+# : "${MAP_PATH:=/root/maps/school_map.yaml}"
+# APP_HOST is the Mac/app IP reachable from the Jetson. Leave empty for auto-detect.
+# : "${APP_HOST:=<mac-ip>}"
+# : "${APP_PORT:=8000}"
+# : "${RECEPTION_VALIDATION_URL:=http://<mac-ip>:8000/api/reservations/validate}"
+# : "${KIOSK_URL:=http://<mac-ip>:8000/kiosk?scan=robot}"
+# : "${KIOSK_DISPLAY:=:0}"
