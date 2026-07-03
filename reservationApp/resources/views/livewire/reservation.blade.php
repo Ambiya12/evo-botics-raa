@@ -145,6 +145,12 @@
 	                        EVO<span class="text-blue-500">BOTICS</span>
                         </a>
                     </div>
+                    <div class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex">
+                        <a href="{{ route('dashboard') }}"
+                           class="inline-flex items-center border-b-2 border-transparent px-1 pt-1 text-sm font-medium leading-5 text-gray-500 transition duration-150 ease-in-out hover:border-gray-300 hover:text-gray-700 focus:border-gray-300 focus:text-gray-700 focus:outline-none">
+                            {{ __('Dashboard') }}
+                        </a>
+                    </div>
                 </div>
                 @auth
                     <div class="hidden sm:ms-6 sm:flex sm:items-center sm:gap-2">
@@ -292,7 +298,7 @@
 
                     <div class="space-y-6">
                         <div class="overflow-hidden rounded-lg bg-white p-6 shadow-sm sm:rounded-lg">
-                            <h2 class="mb-4 text-xl font-bold">{{ __('Number of guests (max 30)') }}</h2>
+                            <h2 class="mb-4 text-xl font-bold">{{ __('Number of guests (max:30)') }}</h2>
                             <input type="number" x-model="localPeople" @input="updatePeople(localPeople)"
                                 min="1" max="30"
                                 class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
