@@ -6,6 +6,7 @@ use App\Models\Reservation;
 use App\Support\ReservationQrPayload;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -15,6 +16,7 @@ class ReservationConfirmed extends Mailable
     use Queueable, SerializesModels;
 
     public string $qrCodeDataUri;
+    private $qrCodePng;
 
     /**
      * Create a new message instance.
@@ -54,6 +56,9 @@ class ReservationConfirmed extends Mailable
      */
     public function attachments(): array
     {
-        return [];
+        return [
+            Attachment::fromData(fn () => $this->qrCodePng, 'qrcode.png')
+                ->withMime('image/png'),
+        ];
     }
 }
