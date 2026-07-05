@@ -14,6 +14,9 @@ def generate_launch_description():
             "approach_topic", default_value="/vision/people/approach"
         ),
         DeclareLaunchArgument(
+            "presence_topic", default_value="/vision/people/presence"
+        ),
+        DeclareLaunchArgument(
             "dialogue_state_topic", default_value="/reception/dialogue/state"
         ),
         DeclareLaunchArgument("zone_id", default_value="reception"),
@@ -35,6 +38,7 @@ def generate_launch_description():
             parameters=[{
                 "detections_topic": LaunchConfiguration("detections_topic"),
                 "approach_topic": LaunchConfiguration("approach_topic"),
+                "presence_topic": LaunchConfiguration("presence_topic"),
                 "dialogue_state_topic": LaunchConfiguration(
                     "dialogue_state_topic"
                 ),
