@@ -54,6 +54,18 @@ def test_repeated_frames_publish_only_one_approach() -> None:
     assert sum(event is not None for event in events) == 1
 
 
+def test_presence_tracks_valid_observation_and_absence_timeout() -> None:
+    detector = HumanApproachFilter(
+        config(debounce_frames=1, absence_reset_sec=1.0)
+    )
+
+    detector.process(person(), now=0.0)
+
+    assert detector.is_person_present(now=0.5)
+    detector.tick(now=1.1)
+    assert not detector.is_person_present(now=1.1)
+
+
 @pytest.mark.parametrize(
     "observation",
     [

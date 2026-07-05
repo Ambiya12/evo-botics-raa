@@ -22,6 +22,24 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_qr", default_value="true"),
         DeclareLaunchArgument("enable_depth_obstacles", default_value="true"),
         DeclareLaunchArgument("enable_object_detection", default_value="false"),
+        DeclareLaunchArgument("person_model_path", default_value=""),
+        DeclareLaunchArgument(
+            "people_detections_topic",
+            default_value="/vision/people/detections",
+        ),
+        DeclareLaunchArgument(
+            "person_detector_status_topic",
+            default_value="/vision/people/detector_status",
+        ),
+        DeclareLaunchArgument("person_input_size", default_value="640"),
+        DeclareLaunchArgument("person_confidence_threshold", default_value="0.55"),
+        DeclareLaunchArgument("person_nms_threshold", default_value="0.45"),
+        DeclareLaunchArgument("person_max_fps", default_value="5.0"),
+        DeclareLaunchArgument("person_depth_sync_tolerance_sec", default_value="0.5"),
+        DeclareLaunchArgument("person_depth_timeout_sec", default_value="0.75"),
+        DeclareLaunchArgument("person_depth_roi_fraction", default_value="0.35"),
+        DeclareLaunchArgument("person_min_depth_m", default_value="0.2"),
+        DeclareLaunchArgument("person_max_depth_m", default_value="5.0"),
         DeclareLaunchArgument("qr_decoder_backend", default_value="auto"),
         DeclareLaunchArgument(
             "qr_detections_topic", default_value="/vision/qr/detections"
@@ -81,7 +99,53 @@ def generate_launch_description():
             name="object_detector_node",
             parameters=[
                 {
-                    "enabled": False,
+                    "color_topic": camera_topic,
+                    "depth_topic": depth_topic,
+                    "detections_topic": LaunchConfiguration(
+                        "people_detections_topic"
+                    ),
+                    "status_topic": LaunchConfiguration(
+                        "person_detector_status_topic"
+                    ),
+                    "model_path": LaunchConfiguration("person_model_path"),
+                    "input_size": ParameterValue(
+                        LaunchConfiguration("person_input_size"),
+                        value_type=int,
+                    ),
+                    "confidence_threshold": ParameterValue(
+                        LaunchConfiguration("person_confidence_threshold"),
+                        value_type=float,
+                    ),
+                    "nms_threshold": ParameterValue(
+                        LaunchConfiguration("person_nms_threshold"),
+                        value_type=float,
+                    ),
+                    "max_fps": ParameterValue(
+                        LaunchConfiguration("person_max_fps"),
+                        value_type=float,
+                    ),
+                    "depth_sync_tolerance_sec": ParameterValue(
+                        LaunchConfiguration(
+                            "person_depth_sync_tolerance_sec"
+                        ),
+                        value_type=float,
+                    ),
+                    "depth_timeout_sec": ParameterValue(
+                        LaunchConfiguration("person_depth_timeout_sec"),
+                        value_type=float,
+                    ),
+                    "depth_roi_fraction": ParameterValue(
+                        LaunchConfiguration("person_depth_roi_fraction"),
+                        value_type=float,
+                    ),
+                    "min_depth_m": ParameterValue(
+                        LaunchConfiguration("person_min_depth_m"),
+                        value_type=float,
+                    ),
+                    "max_depth_m": ParameterValue(
+                        LaunchConfiguration("person_max_depth_m"),
+                        value_type=float,
+                    ),
                     "use_sim_time": use_sim_time,
                 }
             ],

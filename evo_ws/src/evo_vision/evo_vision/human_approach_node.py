@@ -6,7 +6,7 @@ from evo_reception_interfaces.msg import PersonApproach, PersonDetection
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from evo_vision.human_approach import (
     ApproachConfig,
@@ -28,6 +28,11 @@ class HumanApproachNode(Node):
         approach_topic = str(
             self.declare_parameter(
                 "approach_topic", "/vision/people/approach"
+            ).value
+        )
+        presence_topic = str(
+            self.declare_parameter(
+                "presence_topic", "/vision/people/presence"
             ).value
         )
         dialogue_state_topic = str(
@@ -79,6 +84,15 @@ class HumanApproachNode(Node):
         self.approach_publisher = self.create_publisher(
             PersonApproach, approach_topic, 10
         )
+        presence_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.presence_publisher = self.create_publisher(
+            Bool, presence_topic, presence_qos
+        )
+        self.presence_state: bool | None = None
         self.create_subscription(
             PersonDetection, detections_topic, self.on_detection, 10
         )
@@ -94,9 +108,11 @@ class HumanApproachNode(Node):
             state_qos,
         )
         self.create_timer(0.1, self.on_timer)
+        self.publish_presence(False)
         self.get_logger().info(
             f"Human approach filter ready: detections={detections_topic} "
-            f"approach={approach_topic} zone={self.zone_id} "
+            f"approach={approach_topic} presence={presence_topic} "
+            f"zone={self.zone_id} "
             f"distance_m={config.min_distance_m}..{config.max_distance_m} "
             f"normalized_zone=({config.zone_min_x},{config.zone_min_y})"
             f"..({config.zone_max_x},{config.zone_max_y}) "
@@ -107,6 +123,7 @@ class HumanApproachNode(Node):
         )
 
     def on_detection(self, message: PersonDetection) -> None:
+        now = time.monotonic()
         event = self.filter.process(
             PersonObservation(
                 tracking_id=message.tracking_id,
@@ -115,8 +132,9 @@ class HumanApproachNode(Node):
                 normalized_x=float(message.normalized_x),
                 normalized_y=float(message.normalized_y),
             ),
-            now=time.monotonic(),
+            now=now,
         )
+        self.publish_presence(self.filter.is_person_present(now))
         if event is None:
             return
 
@@ -134,7 +152,15 @@ class HumanApproachNode(Node):
         self.filter.update_dialogue_state(message.data)
 
     def on_timer(self) -> None:
-        self.filter.tick(time.monotonic())
+        now = time.monotonic()
+        self.filter.tick(now)
+        self.publish_presence(self.filter.is_person_present(now))
+
+    def publish_presence(self, present: bool) -> None:
+        if present == self.presence_state:
+            return
+        self.presence_state = present
+        self.presence_publisher.publish(Bool(data=present))
 
 
 def main(args=None) -> None:

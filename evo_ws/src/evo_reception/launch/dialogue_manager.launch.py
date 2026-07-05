@@ -8,11 +8,18 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("max_retries", default_value="2"),
-        DeclareLaunchArgument("inactivity_timeout_sec", default_value="20.0"),
+        DeclareLaunchArgument("intent_timeout_sec", default_value="45.0"),
+        DeclareLaunchArgument("qr_inactivity_timeout_sec", default_value="20.0"),
+        DeclareLaunchArgument("allowed_destination_ids_csv", default_value="1,2"),
+        DeclareLaunchArgument(
+            "presence_greeting_fallback_sec", default_value="2.0"
+        ),
+        DeclareLaunchArgument("automatic_return_enabled", default_value="true"),
         DeclareLaunchArgument("timer_period_sec", default_value="0.2"),
         DeclareLaunchArgument("intent_topic", default_value="/voice/intent/result"),
         DeclareLaunchArgument("tts_request_topic", default_value="/voice/tts/request"),
         DeclareLaunchArgument("tts_status_topic", default_value="/voice/tts/status"),
+        DeclareLaunchArgument("stt_status_topic", default_value="/voice/stt/status"),
         DeclareLaunchArgument(
             "event_topic", default_value="/reception/dialogue/event"
         ),
@@ -33,6 +40,9 @@ def generate_launch_description():
             "approach_topic", default_value="/vision/people/approach"
         ),
         DeclareLaunchArgument(
+            "presence_topic", default_value="/vision/people/presence"
+        ),
+        DeclareLaunchArgument(
             "workflow_status_topic", default_value="/reception/workflow/status"
         ),
 
@@ -44,8 +54,23 @@ def generate_launch_description():
                 "max_retries": ParameterValue(
                     LaunchConfiguration("max_retries"), value_type=int
                 ),
-                "inactivity_timeout_sec": ParameterValue(
-                    LaunchConfiguration("inactivity_timeout_sec"), value_type=float
+                "intent_timeout_sec": ParameterValue(
+                    LaunchConfiguration("intent_timeout_sec"), value_type=float
+                ),
+                "qr_inactivity_timeout_sec": ParameterValue(
+                    LaunchConfiguration("qr_inactivity_timeout_sec"),
+                    value_type=float,
+                ),
+                "allowed_destination_ids_csv": LaunchConfiguration(
+                    "allowed_destination_ids_csv"
+                ),
+                "presence_greeting_fallback_sec": ParameterValue(
+                    LaunchConfiguration("presence_greeting_fallback_sec"),
+                    value_type=float,
+                ),
+                "automatic_return_enabled": ParameterValue(
+                    LaunchConfiguration("automatic_return_enabled"),
+                    value_type=bool,
                 ),
                 "timer_period_sec": ParameterValue(
                     LaunchConfiguration("timer_period_sec"), value_type=float
@@ -53,6 +78,7 @@ def generate_launch_description():
                 "intent_topic": LaunchConfiguration("intent_topic"),
                 "tts_request_topic": LaunchConfiguration("tts_request_topic"),
                 "tts_status_topic": LaunchConfiguration("tts_status_topic"),
+                "stt_status_topic": LaunchConfiguration("stt_status_topic"),
                 "event_topic": LaunchConfiguration("event_topic"),
                 "state_topic": LaunchConfiguration("state_topic"),
                 "qr_detections_topic": LaunchConfiguration(
@@ -66,6 +92,7 @@ def generate_launch_description():
                 ),
                 "guide_action_name": LaunchConfiguration("guide_action_name"),
                 "approach_topic": LaunchConfiguration("approach_topic"),
+                "presence_topic": LaunchConfiguration("presence_topic"),
                 "workflow_status_topic": LaunchConfiguration(
                     "workflow_status_topic"
                 ),

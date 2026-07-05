@@ -128,3 +128,36 @@ def test_piper_player_uses_configured_audio_output_without_hardware() -> None:
             check=True,
         ),
     ]
+
+
+def test_piper_player_prewarms_and_reuses_cached_phrase(tmp_path: Path) -> None:
+    model_path = tmp_path / "voice.onnx"
+    model_path.write_bytes(b"model")
+    cache_directory = tmp_path / "cache"
+
+    def fake_run(command, **kwargs):
+        if command[0] == "piper":
+            Path(command[-1]).write_bytes(b"wav")
+
+    with patch(
+        "evo_voice.tts_queue.subprocess.run", side_effect=fake_run
+    ) as run:
+        player = PiperSpeechPlayer(
+            model_path=model_path,
+            output_path=tmp_path / "fallback.wav",
+            piper_executable="piper",
+            audio_player_executable="mpv",
+            cache_directory=cache_directory,
+            prewarm_texts=("Hello",),
+        )
+        player.play("Hello")
+        player.play("Hello")
+
+    piper_calls = [
+        item for item in run.call_args_list if item.args[0][0] == "piper"
+    ]
+    mpv_calls = [
+        item for item in run.call_args_list if item.args[0][0] == "mpv"
+    ]
+    assert len(piper_calls) == 1
+    assert len(mpv_calls) == 2

@@ -148,6 +148,12 @@ class HumanApproachFilter:
         ):
             self.emitted_for_session = False
 
+    def is_person_present(self, now: float) -> bool:
+        return (
+            self.last_valid_at is not None
+            and now - self.last_valid_at < self.config.absence_reset_sec
+        )
+
     def _is_valid(self, observation: PersonObservation) -> bool:
         values = (
             observation.confidence,

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from evo_navigation.navigation_orchestrator import (
     MockNavigator,
     NavigationGates,
@@ -28,7 +30,10 @@ from evo_voice.intent_detector import IntentDetector
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 INTENT_CONFIG = SOURCE_ROOT / "evo_voice" / "config" / "reception_intents.yaml"
 WAYPOINT_CONFIG = (
-    SOURCE_ROOT / "evo_navigation" / "config" / "reception_waypoints.yaml"
+    SOURCE_ROOT
+    / "evo_navigation"
+    / "config"
+    / "home_reception_waypoints.yaml"
 )
 
 
@@ -64,10 +69,10 @@ def advance_to_qr_verification(manager: DialogueManager) -> None:
     assert approach is not None
 
     manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+    greeting = IntentDetector.from_yaml(INTENT_CONFIG).detect("Hi Evo")
+    manager.handle_intent(greeting.intent)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
-    intent = IntentDetector.from_yaml(INTENT_CONFIG).detect(
-        "I have a booking"
-    )
+    intent = IntentDetector.from_yaml(INTENT_CONFIG).detect("Yes, I do")
     manager.handle_intent(intent.intent)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
 
@@ -91,16 +96,19 @@ def make_orchestrator(navigator: MockNavigator, gates=ready_gates):
     )
 
 
-def test_complete_mock_workflow_returns_to_reception() -> None:
+@pytest.mark.parametrize("destination_id", ["1", "2"])
+def test_complete_mock_workflow_returns_to_reception(
+    destination_id: str,
+) -> None:
     manager = DialogueManager()
     advance_to_qr_verification(manager)
-    manager.handle_qr_result(QrValidationOutcome.VALID, "1")
+    manager.handle_qr_result(QrValidationOutcome.VALID, destination_id)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
 
     navigator = MockNavigator(NavigationOutcome.ARRIVED)
     orchestrator = make_orchestrator(navigator)
     manager.handle_event(DialogueEvent.NAVIGATION_STARTED)
-    outbound = orchestrator.execute("1", timeout_sec=10.0)
+    outbound = orchestrator.execute(destination_id, timeout_sec=10.0)
     assert outbound.outcome == NavigationOutcome.ARRIVED
     arrival = manager.handle_event(DialogueEvent.NAVIGATION_ARRIVED)
     assert arrival.speech == ("arrived",)
@@ -112,7 +120,7 @@ def test_complete_mock_workflow_returns_to_reception() -> None:
 
     assert manager.state == DialogueState.IDLE
     assert [waypoint.destination_id for waypoint in navigator.calls] == [
-        "1",
+        destination_id,
         "reception",
     ]
 

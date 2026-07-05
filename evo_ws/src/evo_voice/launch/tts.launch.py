@@ -24,6 +24,12 @@ def generate_launch_description():
             "output_path",
             default_value=str(Path(tempfile.gettempdir()) / "evo_voice_tts.wav"),
         ),
+        DeclareLaunchArgument(
+            "cache_directory",
+            default_value=str(
+                Path(tempfile.gettempdir()) / "evo_voice_tts_cache"
+            ),
+        ),
         DeclareLaunchArgument("piper_executable", default_value="piper"),
         DeclareLaunchArgument("audio_player_executable", default_value="mpv"),
         DeclareLaunchArgument("audio_output_device", default_value=""),
@@ -41,6 +47,7 @@ def generate_launch_description():
                 "piper_model_path": LaunchConfiguration("piper_model_path"),
                 "phrase_config_path": LaunchConfiguration("phrase_config_path"),
                 "output_path": LaunchConfiguration("output_path"),
+                "cache_directory": LaunchConfiguration("cache_directory"),
                 "piper_executable": LaunchConfiguration("piper_executable"),
                 "audio_player_executable": LaunchConfiguration(
                     "audio_player_executable"

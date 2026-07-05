@@ -5,6 +5,13 @@ import pytest
 from evo_navigation.waypoints import WaypointConfigurationError, WaypointRegistry
 
 
+HOME_WAYPOINTS = (
+    Path(__file__).resolve().parents[1]
+    / "config"
+    / "home_reception_waypoints.yaml"
+)
+
+
 def write_registry(tmp_path: Path, content: str) -> Path:
     path = tmp_path / "waypoints.yaml"
     path.write_text(content, encoding="utf-8")
@@ -58,3 +65,19 @@ waypoints:
 
     with pytest.raises(WaypointConfigurationError, match="must be numeric"):
         WaypointRegistry.from_yaml(path)
+
+
+def test_home_registry_maps_reception_and_reservation_room_ids() -> None:
+    registry = WaypointRegistry.from_yaml(HOME_WAYPOINTS)
+
+    reception = registry.get("reception")
+    room_a = registry.get("1")
+    room_b = registry.get("2")
+
+    assert reception is not None
+    assert (reception.x, reception.y, reception.yaw) == (-0.03, 0.83, -1.74)
+    assert room_a is not None
+    assert (room_a.x, room_a.y, room_a.yaw) == (-0.80, 0.35, -2.64)
+    assert room_b is not None
+    assert (room_b.x, room_b.y, room_b.yaw) == (-0.01, 1.08, 1.55)
+    assert registry.hardware_validated

@@ -50,8 +50,9 @@ def generate_launch_description():
                     value_type=bool,
                 ),
                 "mock_outcome": LaunchConfiguration("mock_outcome"),
-                "mock_destination_id": LaunchConfiguration(
-                    "mock_destination_id"
+                "mock_destination_id": ParameterValue(
+                    LaunchConfiguration("mock_destination_id"),
+                    value_type=str,
                 ),
                 "use_sim_time": LaunchConfiguration("use_sim_time"),
             }],

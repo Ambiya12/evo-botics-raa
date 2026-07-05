@@ -10,11 +10,11 @@ import yaml
 SUPPORTED_INTENTS = frozenset(
     {
         "reservation",
-        "check_in",
-        "meeting_room",
-        "help",
+        "affirmative",
+        "negative",
         "repeat",
         "cancel",
+        "greeting",
     }
 )
 UNKNOWN = "unknown"

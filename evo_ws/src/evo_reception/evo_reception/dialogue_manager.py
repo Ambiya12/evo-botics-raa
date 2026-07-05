@@ -8,6 +8,7 @@ from evo_reception.qr_integration import QrValidationOutcome
 
 class DialogueState(str, Enum):
     IDLE = "IDLE"
+    PRESENCE_ARMED = "PRESENCE_ARMED"
     GREETING = "GREETING"
     WAITING_FOR_INTENT = "WAITING_FOR_INTENT"
     WAITING_FOR_QR = "WAITING_FOR_QR"
@@ -20,6 +21,8 @@ class DialogueState(str, Enum):
 
 class DialogueEvent(str, Enum):
     VISITOR_APPROACHED = "visitor_approached"
+    VISITOR_LEFT = "visitor_left"
+    PRESENCE_GREETING_TIMEOUT = "presence_greeting_timeout"
     TTS_COMPLETED = "tts_completed"
     TTS_FAILED = "tts_failed"
     QR_DETECTED = "qr_detected"
@@ -68,11 +71,9 @@ class TtsStatusTracker:
         return None
 
 
-SUPPORTED_RECEPTION_INTENTS = {
+QR_ELIGIBLE_INTENTS = {
+    "affirmative",
     "reservation",
-    "check_in",
-    "meeting_room",
-    "help",
 }
 
 
@@ -110,15 +111,26 @@ class DialogueManager:
             self._reset()
             return Transition(previous, self.state, True, ("cancelled",))
 
+        if self.state == DialogueState.PRESENCE_ARMED:
+            if normalized == "greeting":
+                self.state = DialogueState.GREETING
+                return Transition(previous, self.state, True, ("greeting",))
+            return self._invalid(previous)
+
         if self.state == DialogueState.WAITING_FOR_INTENT:
-            if normalized in SUPPORTED_RECEPTION_INTENTS:
+            if normalized in QR_ELIGIBLE_INTENTS:
                 self.retry_count = 0
                 self.qr_prompt_completed = False
                 self.state = DialogueState.WAITING_FOR_QR
                 return Transition(
                     previous, self.state, True, ("request_qr",)
                 )
-            if normalized == "repeat":
+            if normalized == "negative":
+                self._reset()
+                return Transition(
+                    previous, self.state, True, ("no_reservation",)
+                )
+            if normalized in {"repeat", "greeting"}:
                 return Transition(
                     previous, self.state, True, ("clarify_intent",)
                 )
@@ -150,9 +162,16 @@ class DialogueManager:
 
         if self.state == DialogueState.IDLE:
             if event == DialogueEvent.VISITOR_APPROACHED:
+                self.state = DialogueState.PRESENCE_ARMED
+                return Transition(previous, self.state, True)
+
+        elif self.state == DialogueState.PRESENCE_ARMED:
+            if event == DialogueEvent.VISITOR_LEFT:
+                self._reset()
+                return Transition(previous, self.state, True)
+            if event == DialogueEvent.PRESENCE_GREETING_TIMEOUT:
                 self.state = DialogueState.GREETING
                 return Transition(previous, self.state, True, ("greeting",))
-
         elif self.state == DialogueState.GREETING:
             if event == DialogueEvent.TTS_COMPLETED:
                 self.state = DialogueState.WAITING_FOR_INTENT

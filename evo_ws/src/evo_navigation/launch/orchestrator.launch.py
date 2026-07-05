@@ -25,6 +25,10 @@ def generate_launch_description():
         DeclareLaunchArgument("nav2_action_name", default_value="/navigate_to_pose"),
         DeclareLaunchArgument("estop_topic", default_value="/e_stop_active"),
         DeclareLaunchArgument("localization_topic", default_value="/amcl_pose"),
+        DeclareLaunchArgument("localization_timeout_sec", default_value="2.0"),
+        DeclareLaunchArgument(
+            "max_localization_xy_variance", default_value="0.5"
+        ),
         DeclareLaunchArgument("mock_estop_active", default_value="false"),
         DeclareLaunchArgument("mock_localization_ready", default_value="true"),
         DeclareLaunchArgument("mock_nav2_ready", default_value="true"),
@@ -50,6 +54,14 @@ def generate_launch_description():
                 "nav2_action_name": LaunchConfiguration("nav2_action_name"),
                 "estop_topic": LaunchConfiguration("estop_topic"),
                 "localization_topic": LaunchConfiguration("localization_topic"),
+                "localization_timeout_sec": ParameterValue(
+                    LaunchConfiguration("localization_timeout_sec"),
+                    value_type=float,
+                ),
+                "max_localization_xy_variance": ParameterValue(
+                    LaunchConfiguration("max_localization_xy_variance"),
+                    value_type=float,
+                ),
                 "mock_estop_active": ParameterValue(
                     LaunchConfiguration("mock_estop_active"), value_type=bool
                 ),

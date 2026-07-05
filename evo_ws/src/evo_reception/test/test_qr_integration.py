@@ -11,11 +11,21 @@ from evo_reception.qr_integration import (
     QrScanGate,
     QrValidationOutcome,
     ScanDecision,
+    parse_destination_ids,
     extract_decoded_text,
     outcome_from_error_code,
     successful_validation_data,
     validate_backend_configuration,
 )
+
+
+def test_destination_allowlist_parses_room_ids() -> None:
+    assert parse_destination_ids("1, 2,2") == frozenset({"1", "2"})
+
+
+def test_destination_allowlist_must_not_be_empty() -> None:
+    with pytest.raises(ValueError, match="destination"):
+        parse_destination_ids(" , ")
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,7 @@ class MockReservationBridge:
 def waiting_for_qr(max_retries: int = 0) -> DialogueManager:
     manager = DialogueManager(max_retries=max_retries)
     manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+    manager.handle_intent("greeting")
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
     manager.handle_intent("reservation")
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
@@ -218,6 +229,35 @@ def test_duplicate_scan_is_ignored_without_second_bridge_call() -> None:
     assert duplicate.decision == ScanDecision.DUPLICATE
     assert bridge.calls == ["signed-payload"]
     assert manager.state == DialogueState.WAITING_FOR_QR
+
+
+def test_invalid_qr_allows_a_new_scan_after_retry_message_completes() -> None:
+    manager = waiting_for_qr(max_retries=2)
+    gate = QrScanGate(duplicate_cooldown_sec=5.0)
+    bridge = MockReservationBridge(
+        MockBridgeResult(QrValidationOutcome.INVALID)
+    )
+
+    transition = verify_scan(manager, gate, bridge)
+
+    assert transition.speech == ("invalid_qr",)
+    assert manager.state == DialogueState.WAITING_FOR_QR
+    assert not manager.qr_prompt_completed
+    assert gate.accept(
+        '{"decoded_text":"second-signed-payload"}',
+        manager.state.value,
+        manager.qr_prompt_completed,
+    ).decision == ScanDecision.IGNORED_STATE
+
+    manager.handle_event(DialogueEvent.TTS_COMPLETED)
+    retry = gate.accept(
+        '{"decoded_text":"second-signed-payload"}',
+        manager.state.value,
+        manager.qr_prompt_completed,
+    )
+
+    assert retry.decision == ScanDecision.ACCEPTED
+    assert manager.destination_id is None
 
 
 def test_bridge_duplicate_response_returns_to_qr_wait_without_guidance() -> None:

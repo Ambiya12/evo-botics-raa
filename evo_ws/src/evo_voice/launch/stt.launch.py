@@ -11,6 +11,7 @@ from launch_ros.parameter_descriptions import ParameterValue
 def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("transcript_topic", default_value="/voice/stt/transcript"),
+        DeclareLaunchArgument("status_topic", default_value="/voice/stt/status"),
         DeclareLaunchArgument("tts_status_topic", default_value="/voice/tts/status"),
         DeclareLaunchArgument(
             "mock_audio_topic", default_value="/voice/stt/mock_audio_path"
@@ -23,6 +24,8 @@ def generate_launch_description():
         DeclareLaunchArgument("microphone_device", default_value="-1"),
         DeclareLaunchArgument("listen_timeout_sec", default_value="1.0"),
         DeclareLaunchArgument("phrase_time_limit_sec", default_value="10.0"),
+        DeclareLaunchArgument("pause_threshold_sec", default_value="0.4"),
+        DeclareLaunchArgument("non_speaking_duration_sec", default_value="0.2"),
         DeclareLaunchArgument("vad_rms_threshold", default_value="0.01"),
         DeclareLaunchArgument("minimum_confidence", default_value="0.4"),
         DeclareLaunchArgument(
@@ -42,6 +45,7 @@ def generate_launch_description():
             name="stt_node",
             parameters=[{
                 "transcript_topic": LaunchConfiguration("transcript_topic"),
+                "status_topic": LaunchConfiguration("status_topic"),
                 "tts_status_topic": LaunchConfiguration("tts_status_topic"),
                 "mock_audio_topic": LaunchConfiguration("mock_audio_topic"),
                 "mock_audio": ParameterValue(
@@ -59,6 +63,13 @@ def generate_launch_description():
                 ),
                 "phrase_time_limit_sec": ParameterValue(
                     LaunchConfiguration("phrase_time_limit_sec"), value_type=float
+                ),
+                "pause_threshold_sec": ParameterValue(
+                    LaunchConfiguration("pause_threshold_sec"), value_type=float
+                ),
+                "non_speaking_duration_sec": ParameterValue(
+                    LaunchConfiguration("non_speaking_duration_sec"),
+                    value_type=float,
                 ),
                 "vad_rms_threshold": ParameterValue(
                     LaunchConfiguration("vad_rms_threshold"), value_type=float
