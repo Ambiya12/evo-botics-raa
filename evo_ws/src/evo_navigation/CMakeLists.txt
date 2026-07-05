@@ -79,6 +79,14 @@ if(BUILD_TESTING)
     )
   endif()
 
+  ament_add_gtest(test_navigation_action_status test/test_navigation_action_status.cpp)
+  if(TARGET test_navigation_action_status)
+    target_include_directories(test_navigation_action_status PRIVATE include)
+    ament_target_dependencies(test_navigation_action_status
+      rclcpp_action
+    )
+  endif()
+
   ament_add_pytest_test(
     test_navigation_orchestrator
     test/test_navigation_orchestrator.py
