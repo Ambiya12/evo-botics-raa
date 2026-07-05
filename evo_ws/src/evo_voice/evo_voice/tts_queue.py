@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from pathlib import Path
 from queue import Queue
 import subprocess
 from threading import Lock, Thread
+import time
 from typing import Callable, Protocol
 
 
@@ -44,26 +46,29 @@ class PiperSpeechPlayer:
         piper_executable: str,
         audio_player_executable: str,
         audio_output_device: str = "",
+        cache_directory: Path | None = None,
+        prewarm_texts: tuple[str, ...] = (),
+        latency_callback: Callable[[str, float], None] | None = None,
     ) -> None:
         self.model_path = model_path
         self.output_path = output_path
         self.piper_executable = piper_executable
         self.audio_player_executable = audio_player_executable
         self.audio_output_device = audio_output_device
+        self.cache_directory = cache_directory
+        self.latency_callback = latency_callback
+        if self.cache_directory is not None:
+            self.cache_directory.mkdir(parents=True, exist_ok=True)
+            for text in prewarm_texts:
+                self._cached_audio_path(text)
 
     def play(self, text: str) -> None:
-        subprocess.run(
-            [
-                self.piper_executable,
-                "--model",
-                str(self.model_path),
-                "--output_file",
-                str(self.output_path),
-            ],
-            input=text,
-            text=True,
-            check=True,
+        audio_path = (
+            self._cached_audio_path(text)
+            if self.cache_directory is not None
+            else self._render(text, self.output_path)
         )
+        playback_started = time.monotonic()
         command = [
             self.audio_player_executable,
             "--no-video",
@@ -71,8 +76,52 @@ class PiperSpeechPlayer:
         ]
         if self.audio_output_device:
             command.append(f"--audio-device={self.audio_output_device}")
-        command.append(str(self.output_path))
+        command.append(str(audio_path))
         subprocess.run(command, check=True)
+        self._report_latency(
+            "playback_sec", time.monotonic() - playback_started
+        )
+
+    def _cached_audio_path(self, text: str) -> Path:
+        assert self.cache_directory is not None
+        model_stat = self.model_path.stat()
+        fingerprint = (
+            f"{self.model_path.resolve()}:{model_stat.st_size}:"
+            f"{model_stat.st_mtime_ns}:{text}"
+        )
+        digest = hashlib.sha256(fingerprint.encode("utf-8")).hexdigest()
+        audio_path = self.cache_directory / f"{digest}.wav"
+        if audio_path.is_file() and audio_path.stat().st_size > 0:
+            self._report_latency("cache_hit_sec", 0.0)
+            return audio_path
+
+        temporary_path = audio_path.with_suffix(".tmp.wav")
+        self._render(text, temporary_path)
+        temporary_path.replace(audio_path)
+        return audio_path
+
+    def _render(self, text: str, output_path: Path) -> Path:
+        synthesis_started = time.monotonic()
+        subprocess.run(
+            [
+                self.piper_executable,
+                "--model",
+                str(self.model_path),
+                "--output_file",
+                str(output_path),
+            ],
+            input=text,
+            text=True,
+            check=True,
+        )
+        self._report_latency(
+            "synthesis_sec", time.monotonic() - synthesis_started
+        )
+        return output_path
+
+    def _report_latency(self, phase: str, duration: float) -> None:
+        if self.latency_callback is not None:
+            self.latency_callback(phase, duration)
 
 
 class QueuedTts:

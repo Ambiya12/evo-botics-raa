@@ -51,6 +51,12 @@ class TtsNode(Node):
                 str(Path(tempfile.gettempdir()) / "evo_voice_tts.wav"),
             ).value
         )
+        cache_directory = _path(
+            self.declare_parameter(
+                "cache_directory",
+                str(Path(tempfile.gettempdir()) / "evo_voice_tts_cache"),
+            ).value
+        )
         piper_executable = str(
             self.declare_parameter("piper_executable", "piper").value
         ).strip()
@@ -68,6 +74,7 @@ class TtsNode(Node):
             piper_executable,
             audio_player_executable,
             audio_output_device,
+            cache_directory,
         )
 
         status_qos = QoSProfile(
@@ -91,6 +98,7 @@ class TtsNode(Node):
         piper_executable: str,
         audio_player_executable: str,
         audio_output_device: str,
+        cache_directory: Path,
     ):
         if self.mock_audio:
             return MockSpeechPlayer()
@@ -104,6 +112,8 @@ class TtsNode(Node):
             errors.append("'output_path' must name a file")
         elif not output_path.parent.is_dir():
             errors.append(f"'output_path' parent does not exist: {output_path.parent}")
+        if not cache_directory.name:
+            errors.append("'cache_directory' must name a directory")
         for parameter, executable in (
             ("piper_executable", piper_executable),
             ("audio_player_executable", audio_player_executable),
@@ -123,17 +133,27 @@ class TtsNode(Node):
             piper_executable=piper_executable,
             audio_player_executable=audio_player_executable,
             audio_output_device=audio_output_device,
+            cache_directory=cache_directory,
+            prewarm_texts=self.phrase_book.configured_texts(),
+            latency_callback=self.log_latency,
         )
 
     def on_speak_request(self, message: String) -> None:
         try:
             text = self.phrase_book.resolve_request(message.data)
             self.tts_queue.enqueue(SpeakRequest(text=text))
+            self.get_logger().info(
+                f"Queued TTS request: characters={len(text)}"
+            )
         except ValueError as exc:
             self.get_logger().error(str(exc))
 
     def publish_status(self, status: str) -> None:
         self.status_publisher.publish(String(data=status))
+        self.get_logger().info(f"TTS status={status}")
+
+    def log_latency(self, phase: str, duration: float) -> None:
+        self.get_logger().info(f"TTS latency: {phase}={duration:.3f}")
 
     def destroy_node(self) -> bool:
         self.tts_queue.shutdown()

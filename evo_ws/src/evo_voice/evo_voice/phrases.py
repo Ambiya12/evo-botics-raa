@@ -58,3 +58,7 @@ class PhraseBook:
             return self._phrases[key]
         except KeyError as exc:
             raise ValueError(f"Unknown reception phrase: {key}") from exc
+
+    def configured_texts(self) -> tuple[str, ...]:
+        """Return fixed phrases for deterministic TTS pre-generation."""
+        return tuple(self._phrases.values())

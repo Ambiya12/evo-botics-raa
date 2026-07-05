@@ -20,10 +20,17 @@ def detector() -> IntentDetector:
 @pytest.mark.parametrize(
     ("transcript", "expected"),
     [
+        ("Hi Evo!", "greeting"),
+        ("Hi", "greeting"),
+        ("Hello", "greeting"),
+        ("Yes", "affirmative"),
+        ("Yes, I do", "affirmative"),
+        ("I have one", "affirmative"),
+        ("No", "negative"),
+        ("No, thank you", "negative"),
+        ("Not yet", "negative"),
+        ("I have a reservation.", "reservation"),
         ("I have a booking", "reservation"),
-        ("I am here to sign in", "check_in"),
-        ("Where is the conference room?", "meeting_room"),
-        ("I need assistance", "help"),
         ("Could you say that again?", "repeat"),
         ("Never mind, thank you", "cancel"),
     ],
@@ -35,10 +42,10 @@ def test_synonyms(detector: IntentDetector, transcript: str, expected: str) -> N
 def test_normalization_handles_punctuation_and_casing(
     detector: IntentDetector,
 ) -> None:
-    match = detector.detect("I'D LIKE TO CHECK-IN, PLEASE!")
+    match = detector.detect("YES, I DO!")
 
-    assert match.intent == "check_in"
-    assert match.normalized_transcript == "i d like to check in please"
+    assert match.intent == "affirmative"
+    assert match.normalized_transcript == "yes i do"
 
 
 def test_normalization_collapses_symbols_and_whitespace() -> None:
@@ -57,10 +64,11 @@ def test_unrelated_stop_phrase_is_not_cancelled(detector: IntentDetector) -> Non
     assert detector.detect("Where is the nearest bus stop?").intent == UNKNOWN
 
 
-def test_longest_phrase_wins_when_multiple_rules_match(
-    detector: IntentDetector,
-) -> None:
-    assert detector.detect("Please help me check in").intent == "check_in"
+def test_longest_affirmative_phrase_wins(detector: IntentDetector) -> None:
+    match = detector.detect("Yes, I do have one")
+
+    assert match.intent == "affirmative"
+    assert match.matched_phrase == "yes i do"
 
 
 def test_unknown_input(detector: IntentDetector) -> None:

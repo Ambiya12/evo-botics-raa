@@ -36,7 +36,14 @@ def generate_launch_description():
             "tts_output_path",
             default_value=str(temporary_directory / "evo_voice_tts.wav"),
         ),
+        DeclareLaunchArgument(
+            "tts_cache_directory",
+            default_value=str(
+                temporary_directory / "evo_voice_tts_cache"
+            ),
+        ),
         DeclareLaunchArgument("stt_mock_audio", default_value="true"),
+        DeclareLaunchArgument("stt_status_topic", default_value="/voice/stt/status"),
         DeclareLaunchArgument("stt_model_path", default_value=""),
         DeclareLaunchArgument("stt_device", default_value="cpu"),
         DeclareLaunchArgument("stt_compute_type", default_value="int8"),
@@ -44,6 +51,8 @@ def generate_launch_description():
         DeclareLaunchArgument("microphone_device", default_value="-1"),
         DeclareLaunchArgument("listen_timeout_sec", default_value="1.0"),
         DeclareLaunchArgument("phrase_time_limit_sec", default_value="10.0"),
+        DeclareLaunchArgument("pause_threshold_sec", default_value="0.4"),
+        DeclareLaunchArgument("non_speaking_duration_sec", default_value="0.2"),
         DeclareLaunchArgument("vad_rms_threshold", default_value="0.01"),
         DeclareLaunchArgument("minimum_confidence", default_value="0.4"),
         DeclareLaunchArgument(
@@ -63,12 +72,14 @@ def generate_launch_description():
                     "audio_player_executable"
                 ),
                 "output_path": LaunchConfiguration("tts_output_path"),
+                "cache_directory": LaunchConfiguration("tts_cache_directory"),
             },
         ),
         include_voice_launch(
             "stt.launch.py",
             {
                 "mock_audio": LaunchConfiguration("stt_mock_audio"),
+                "status_topic": LaunchConfiguration("stt_status_topic"),
                 "model_path": LaunchConfiguration("stt_model_path"),
                 "device": LaunchConfiguration("stt_device"),
                 "compute_type": LaunchConfiguration("stt_compute_type"),
@@ -77,6 +88,12 @@ def generate_launch_description():
                 "listen_timeout_sec": LaunchConfiguration("listen_timeout_sec"),
                 "phrase_time_limit_sec": LaunchConfiguration(
                     "phrase_time_limit_sec"
+                ),
+                "pause_threshold_sec": LaunchConfiguration(
+                    "pause_threshold_sec"
+                ),
+                "non_speaking_duration_sec": LaunchConfiguration(
+                    "non_speaking_duration_sec"
                 ),
                 "vad_rms_threshold": LaunchConfiguration("vad_rms_threshold"),
                 "minimum_confidence": LaunchConfiguration("minimum_confidence"),

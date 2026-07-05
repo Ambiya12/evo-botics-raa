@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from ament_index_python.packages import get_package_share_directory
 from evo_reception_interfaces.msg import IntentResult, Transcript
@@ -47,6 +48,7 @@ class IntentDetectorNode(Node):
         )
 
     def on_transcript(self, transcript: Transcript) -> None:
+        detection_started = time.monotonic()
         match = self.detector.detect(transcript.text)
         result = IntentResult()
         result.header = transcript.header
@@ -55,7 +57,8 @@ class IntentDetectorNode(Node):
         result.source_transcript = match.source_transcript
         self.result_publisher.publish(result)
         self.get_logger().info(
-            f"Published intent={result.intent} confidence={result.confidence:.2f}"
+            f"Published intent={result.intent} confidence={result.confidence:.2f} "
+            f"intent_detection_sec={time.monotonic() - detection_started:.6f}"
         )
 
 

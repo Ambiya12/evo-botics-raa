@@ -1,33 +1,39 @@
 priority:
   - cancel
   - repeat
-  - check_in
-  - meeting_room
+  - greeting
+  - negative
+  - affirmative
   - reservation
-  - help
 
 intents:
+  greeting:
+    - hi evo
+    - hello evo
+    - hey evo
+    - hello
+    - hi
   reservation:
     - reservation
     - booking
     - booked a visit
     - have a reservation
     - have a booking
-  check_in:
-    - check in
-    - checking in
-    - sign in
-    - here to check in
-  meeting_room:
-    - meeting room
-    - conference room
-    - meeting space
-    - find my meeting room
-  help:
-    - help
-    - assistance
-    - need help
-    - need assistance
+  affirmative:
+    - yes
+    - yes please
+    - yes i do
+    - yeah
+    - yep
+    - i do
+    - i have one
+  negative:
+    - no
+    - no thanks
+    - no thank you
+    - not yet
+    - i do not
+    - i don't
   repeat:
     - repeat
     - repeat that

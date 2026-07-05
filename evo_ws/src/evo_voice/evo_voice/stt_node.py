@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from threading import Event, Thread
 import tempfile
+import time
 
 from evo_reception_interfaces.msg import Transcript
 import rclpy
@@ -34,6 +35,9 @@ class SttNode(Node):
         tts_status_topic = str(
             self.declare_parameter("tts_status_topic", "/voice/tts/status").value
         )
+        status_topic = str(
+            self.declare_parameter("status_topic", "/voice/stt/status").value
+        )
         mock_audio_topic = str(
             self.declare_parameter(
                 "mock_audio_topic", "/voice/stt/mock_audio_path"
@@ -56,6 +60,12 @@ class SttNode(Node):
         )
         self.phrase_time_limit_sec = float(
             self.declare_parameter("phrase_time_limit_sec", 10.0).value
+        )
+        self.pause_threshold_sec = float(
+            self.declare_parameter("pause_threshold_sec", 0.4).value
+        )
+        self.non_speaking_duration_sec = float(
+            self.declare_parameter("non_speaking_duration_sec", 0.2).value
         )
         vad_rms_threshold = float(
             self.declare_parameter("vad_rms_threshold", 0.01).value
@@ -94,6 +104,8 @@ class SttNode(Node):
             self.microphone_device,
             self.listen_timeout_sec,
             self.phrase_time_limit_sec,
+            self.pause_threshold_sec,
+            self.non_speaking_duration_sec,
             mock_confidence,
         )
         self.capture_gate = CaptureGate()
@@ -130,6 +142,14 @@ class SttNode(Node):
         self.transcript_publisher = self.create_publisher(
             Transcript, transcript_topic, 10
         )
+        status_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.status_publisher = self.create_publisher(
+            String, status_topic, status_qos
+        )
         tts_status_qos = QoSProfile(
             depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -152,13 +172,17 @@ class SttNode(Node):
                 daemon=True,
             )
             self.capture_thread.start()
+        self.publish_status("idle")
 
         self.get_logger().info(
             f"STT ready: transcript={transcript_topic} "
-            f"tts_status={tts_status_topic} mock_audio={self.mock_audio} "
+            f"status={status_topic} tts_status={tts_status_topic} "
+            f"mock_audio={self.mock_audio} "
             f"microphone_device={self.microphone_device} language={language} "
             f"vad_rms_threshold={vad_rms_threshold} "
             f"minimum_confidence={minimum_confidence} "
+            f"pause_threshold_sec={self.pause_threshold_sec} "
+            f"non_speaking_duration_sec={self.non_speaking_duration_sec} "
             "tts_capture_suppression=enabled"
         )
 
@@ -173,6 +197,8 @@ class SttNode(Node):
         microphone_device: int,
         listen_timeout_sec: float,
         phrase_time_limit_sec: float,
+        pause_threshold_sec: float,
+        non_speaking_duration_sec: float,
         mock_confidence: float,
     ) -> None:
         errors: list[str] = []
@@ -198,6 +224,15 @@ class SttNode(Node):
             errors.append("'listen_timeout_sec' must be greater than zero")
         if phrase_time_limit_sec <= 0.0:
             errors.append("'phrase_time_limit_sec' must be greater than zero")
+        if pause_threshold_sec <= 0.0:
+            errors.append("'pause_threshold_sec' must be greater than zero")
+        if non_speaking_duration_sec < 0.0:
+            errors.append("'non_speaking_duration_sec' must be non-negative")
+        if non_speaking_duration_sec > pause_threshold_sec:
+            errors.append(
+                "'non_speaking_duration_sec' must not exceed "
+                "'pause_threshold_sec'"
+            )
         if not 0.0 <= mock_confidence <= 1.0:
             errors.append("'mock_confidence' must be between 0.0 and 1.0")
         if errors:
@@ -222,6 +257,8 @@ class SttNode(Node):
 
         device_index = None if self.microphone_device == -1 else self.microphone_device
         recognizer = sr.Recognizer()
+        recognizer.pause_threshold = self.pause_threshold_sec
+        recognizer.non_speaking_duration = self.non_speaking_duration_sec
         try:
             with sr.Microphone(device_index=device_index) as source:
                 while rclpy.ok() and not self.stop_event.is_set():
@@ -229,6 +266,7 @@ class SttNode(Node):
                         self.stop_event.wait(0.05)
                         continue
                     capture_token = self.capture_gate.capture_token()
+                    capture_started = time.monotonic()
                     try:
                         audio = recognizer.listen(
                             source,
@@ -237,6 +275,10 @@ class SttNode(Node):
                         )
                     except sr.WaitTimeoutError:
                         continue
+                    self.get_logger().info(
+                        "STT latency: capture_sec="
+                        f"{time.monotonic() - capture_started:.3f}"
+                    )
                     if self.stop_event.is_set():
                         break
                     self.process_audio(
@@ -252,7 +294,18 @@ class SttNode(Node):
         capture_token: int | None = None,
     ) -> None:
         captured_at = self.get_clock().now().to_msg()
-        result = self.pipeline.process(wav_data, capture_token=capture_token)
+        transcription_started = time.monotonic()
+        self.publish_status("transcribing")
+        try:
+            result = self.pipeline.process(
+                wav_data, capture_token=capture_token
+            )
+        finally:
+            transcription_sec = time.monotonic() - transcription_started
+            self.publish_status("idle")
+            self.get_logger().info(
+                f"STT latency: transcription_sec={transcription_sec:.3f}"
+            )
         if result is None:
             return
         message = Transcript()
@@ -267,6 +320,9 @@ class SttNode(Node):
             f"Published transcript: language={message.language or '<unknown>'} "
             f"confidence={message.confidence:.2f} characters={len(message.text)}"
         )
+
+    def publish_status(self, status: str) -> None:
+        self.status_publisher.publish(String(data=status))
 
     def on_transcription_error(self, error: Exception) -> None:
         self.get_logger().error(f"Transcription failed: {error}")
