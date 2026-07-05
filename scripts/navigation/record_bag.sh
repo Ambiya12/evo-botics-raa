@@ -24,10 +24,7 @@ ros2 bag record -o "$OUTPUT" \
   /cmd_vel_selected \
   /cmd_vel_safe \
   /cmd_vel \
-  /evo/control_mode \
-  /evo/control_mode_state \
   /evo/navigation/goal_request \
-  /evo/navigation/goal_status \
   /goal_pose_validated \
   /collision_monitor_state \
   /diagnostics \

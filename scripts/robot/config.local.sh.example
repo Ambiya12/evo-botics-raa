@@ -6,12 +6,102 @@
 
 # : "${JETSON_IP:=<jetson-ip>}"
 # : "${JETSON_USER:=jetson}"
-# : "${CONTAINER:=auto}"
-# : "${DEFAULT_MAP_NAME:=school_map}"
+# Stable containers provisioned on the Jetson:
+# : "${CONTAINER:=evo-ros}"
+# : "${AGENT_CONTAINER:=evo-micro-ros-agent}"
+# : "${MICRO_ROS_SERVICE:=evo-micro-ros-agent.service}"
+# : "${MICRO_ROS_SERIAL_DEVICE:=/dev/myserial}"
+# : "${MCU_PROBE_TOPIC:=/battery}"
+# Keep manual mapping recoverable near obstacles. Enable only after validating
+# the collision-monitor polygon and scan geometry on the physical robot.
+# : "${SLAM_USE_COLLISION_MONITOR:=false}"
+# Saved-map navigation uses Nav2 costmaps and controller collision checking.
+# Keep the additional all-direction stop polygon off until its recovery
+# behavior has been validated at the controlled navigation site.
+# : "${NAV_USE_COLLISION_MONITOR:=false}"
+# : "${DEFAULT_MAP_NAME:=school_v1}"
+# The default MAP_PATH is the map deployed from this repository:
+# /root/evo_ws/src/evo_navigation/maps/school_v1.yaml
+# Override only to use a different map, for example:
 # : "${MAP_PATH:=/root/maps/school_map.yaml}"
 # APP_HOST is the Mac/app IP reachable from the Jetson. Leave empty for auto-detect.
 # : "${APP_HOST:=<mac-ip>}"
 # : "${APP_PORT:=8000}"
+# : "${CAMERA_PORT:=8080}"
+# : "${ROSBRIDGE_PORT:=9090}"
+# Real person detection, enabled only after A0-A5 and model validation pass:
+# : "${PERSON_DETECTION_ENABLED:=true}"
+# : "${PERSON_DETECTION_MODEL_PATH:=/root/models/person_detector.onnx}"
+# : "${PERSON_DETECTION_CONFIDENCE:=0.55}"
+# : "${PERSON_DETECTION_NMS:=0.45}"
+# : "${PERSON_DETECTION_MAX_FPS:=5.0}"
+# Reception-zone filtering; tune one value at a time during A6:
+# : "${APPROACH_MIN_CONFIDENCE:=0.65}"
+# : "${APPROACH_MIN_DISTANCE_M:=0.5}"
+# : "${APPROACH_MAX_DISTANCE_M:=2.5}"
+# : "${APPROACH_ZONE_MIN_X:=0.25}"
+# : "${APPROACH_ZONE_MAX_X:=0.75}"
+# : "${APPROACH_ZONE_MIN_Y:=0.15}"
+# : "${APPROACH_ZONE_MAX_Y:=0.95}"
+# : "${APPROACH_DEBOUNCE_FRAMES:=3}"
+# : "${APPROACH_COOLDOWN_SEC:=10.0}"
+# : "${APPROACH_ABSENCE_RESET_SEC:=1.0}"
+# Presence-gated greeting. Set fallback to 0 to require a spoken "Hi".
+# : "${PRESENCE_GREETING_FALLBACK_SEC:=2.0}"
+# Shorter end-of-speech values improve response latency on short commands.
+# : "${STT_PHRASE_TIME_LIMIT_SEC:=5.0}"
+# : "${STT_PAUSE_THRESHOLD_SEC:=0.4}"
+# : "${STT_NON_SPEAKING_DURATION_SEC:=0.2}"
+# Optional host PulseAudio WebRTC noise suppression for the robot microphone.
+# : "${WEBRTC_MIC_ENABLED:=true}"
+# : "${WEBRTC_MIC_SOURCE_MASTER:=alsa_input.usb-...analog-mono}"
+# : "${WEBRTC_MIC_SOURCE_NAME:=evo_webrtc_mic}"
+# : "${WEBRTC_MIC_SOURCE_VOLUME:=75%}"
+# Keep intent and QR timing independent; QR must remain at least 20 seconds.
+# : "${INTENT_TIMEOUT_SEC:=45.0}"
+# : "${QR_INACTIVITY_TIMEOUT_SEC:=20.0}"
+# Laravel room IDs accepted by this robot deployment.
+# : "${RECEPTION_ALLOWED_DESTINATION_IDS:=1,2}"
+# Optional installed/source YAML path; empty uses the Home registry.
+# : "${RECEPTION_WAYPOINT_CONFIG_PATH:=}"
+# Demo defaults to School globally; override to Home on the current robot.
+# : "${DEFAULT_DEMO_MAP:=home}"
+# : "${HOME_RECEPTION_WAYPOINT_CONFIG_PATH:=}"
+# School must be set after its coordinates are measured.
+# : "${SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH:=}"
+# : "${DEMO_CLEAN_START:=true}"
+# Set true only when this Mac should manage Laravel through Sail.
+# : "${DEMO_START_LARAVEL:=true}"
+# : "${DEMO_BACKEND_START_TIMEOUT_SEC:=60}"
+# Controlled-site only. Never enable for apartment testing.
+# : "${DEMO_REAL_NAVIGATION:=false}"
+# : "${HOME_MAP_PATH:=/root/maps/home.yaml}"
+# : "${SCHOOL_MAP_PATH:=/root/evo_ws/src/evo_navigation/maps/school_v1.yaml}"
+# : "${REAL_NAVIGATION_TIMEOUT_SEC:=120.0}"
+# : "${REAL_LOCALIZATION_TIMEOUT_SEC:=2.0}"
+# : "${REAL_MAX_LOCALIZATION_XY_VARIANCE:=0.5}"
+# Keep false for B4. Set true only after B4 is accepted to begin B5.
+# : "${REAL_AUTOMATIC_RETURN_ENABLED:=false}"
 # : "${RECEPTION_VALIDATION_URL:=http://<mac-ip>:8000/api/reservations/validate}"
 # : "${KIOSK_URL:=http://<mac-ip>:8000/kiosk?scan=robot}"
 # : "${KIOSK_DISPLAY:=:0}"
+#
+# evo_voice is unfinished. Keep each real audio subsystem opt-in.
+# Speaker-only phase (STT remains mocked):
+# : "${TTS_MOCK_AUDIO:=false}"
+# : "${STT_MOCK_AUDIO:=true}"
+# : "${PIPER_MODEL_PATH:=/absolute/path/to/local/model.onnx}"
+# : "${AUDIO_OUTPUT_DEVICE:=}"
+#
+# Duplex voice phase, only after speaker-only acceptance:
+# : "${STT_MOCK_AUDIO:=false}"
+# : "${STT_MODEL_PATH:=/absolute/path/to/local/whisper/model}"
+# : "${STT_DEVICE:=cpu}"
+# : "${STT_COMPUTE_TYPE:=int8}"
+# : "${VOICE_LANGUAGE:=en}"
+# : "${MICROPHONE_DEVICE:=-1}"
+#
+# Isolated camera/QR development can keep reservation validation mocked.
+# : "${RECEPTION_MOCK_OUTCOME:=valid}"
+# Use an ID present in reception_waypoints.yaml; the example registry contains 1.
+# : "${RECEPTION_MOCK_DESTINATION_ID:=1}"

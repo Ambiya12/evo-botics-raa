@@ -3,8 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-LAST_PROFILE_FILE="${SCRIPT_DIR}/.last_profile"
-
 . "${SCRIPT_DIR}/config.sh"
 . "${SCRIPT_DIR}/lib.sh"
 
@@ -13,25 +11,30 @@ usage() {
 Usage: ./scripts/robot.sh <command> [args]
 
 Main commands:
+  demo [home|school]          Clean-start real-data reception and open kiosk
   config ip <ip>              Save the current Jetson IP
   config show                 Show active robot settings
   config app-host <ip>        Save the Mac/app IP reachable from the Jetson
   launch [map-name|path]      Start saved-map navigation plus robot kiosk
-  setup                       Push local evo_ws/src to Jetson, copy into Docker, build
-  setup-kiosk                 Install QR/kiosk runtime packages in the current Docker container
-  recover [mode]              Seed Docker from Jetson cache, start a mode, wake MCU
+  setup                       Push local evo_ws/src to Jetson and build
   sync-maps [map-name|path]   Copy a saved Jetson host map into the current Docker container
   kiosk [url|stop]            Open or close the kiosk page on the Jetson display
 
 Launch modes:
+  demo home                   Home reception; physical Nav2 when DEMO_REAL_NAVIGATION=true
+  demo school                 School demo after its waypoint registry is configured
   launch                      saved school map + camera + QR scanner + kiosk screen
-  start base                  bringup + camera + vision + web
+  start base                  bringup + camera + vision + web + safe teleop
   start map                   bringup + camera + SLAM + web
-  start navigate              use MAP_PATH or default /root/maps/school_map.yaml
+  start navigate              use MAP_PATH or the configured default saved map
   start reception             camera + QR scanner + QR validation bridge + web
-  start stationary            apartment-safe mock navigation orchestrator only
+  start voice                 isolated, unfinished voice stack
+  start camera-qr             camera + QR scanner + mocked validation + web
+  start stationary-reception  mock backend with forced-mock navigation
+  start stationary-reception-real  real backend with forced-mock navigation
   start kiosk                 reception mode plus kiosk browser on the robot screen
   nav [map-name|path.yaml]    launch saved-map navigation
+  map rviz                    create a map with RViz on the robot display
   map foxglove                create a map with Foxglove
   save-map [map-name]         save the current SLAM map
 
@@ -39,12 +42,11 @@ Operations:
   status                      tmux sessions, ROS topics, MCU, ports
   logs <service>              attach service logs, detach with Ctrl-b then d
   stop <service|mode|all>     stop services
-  restart [mode]              restart the last mode, or a given mode
-  mcu [--force]               wake the micro-ROS base board
+  restart <mode>              restart an explicit mode
+  mcu [--force]               check/recover the systemd-managed micro-ROS agent
   health                      Jetson health snapshot
-  safety                      show stationary navigation safety parameters/topics
 
-Services: bringup camera vision reception stationary_nav web slam nav
+Services: bringup camera vision reception reception_mock voice dialogue stationary_nav reception_nav approach web teleop slam nav
 EOF
 }
 
@@ -80,8 +82,10 @@ build_evo_ws_in_docker() {
 
 copy_host_ws_to_docker() {
   local container="$1"
-  echo "[deploy] copying Jetson host workspace into Docker (${container})"
-  _ssh "docker exec ${container} rm -rf ${DOCKER_WS} && docker exec ${container} mkdir -p ${DOCKER_WS} && docker cp ${HOST_WS}/. ${container}:${DOCKER_WS}"
+  echo "[deploy] copying Jetson source into Docker (${container})"
+  _ssh "docker exec ${container} rm -rf ${DOCKER_WS}/src &&
+    docker exec ${container} mkdir -p ${DOCKER_WS}/src &&
+    docker cp ${HOST_WS}/src/. ${container}:${DOCKER_WS}/src"
 }
 
 ensure_evo_ws_built() {
@@ -96,15 +100,21 @@ ensure_evo_ws_built() {
   build_evo_ws_in_docker "$container"
 }
 
+require_evo_ws_built() {
+  local container="$1"
+  if ! _ssh "docker exec ${container} test -f ${DOCKER_WS}/install/setup.bash"; then
+    echo "[evo_ws] ${DOCKER_WS}/install/setup.bash is missing in ${container}." >&2
+    echo "[evo_ws] stop active services, then deploy and build with: ./scripts/robot.sh setup" >&2
+    return 1
+  fi
+}
+
 cmd_setup() {
-  if [ "${1:-}" = "--push" ]; then
-    echo "[setup] --push is now the default workflow"
-  elif [ -n "${1:-}" ]; then
+  if [ -n "${1:-}" ]; then
     echo "Usage: ./scripts/robot.sh setup" >&2
     exit 1
   fi
 
-  ensure_tmux
   local container
   container="$(require_container)"
 
@@ -123,9 +133,14 @@ cmd_setup() {
 cmd_sync_maps() {
   case "${1:-}" in
     help|-h|--help)
-      echo "Usage: ./scripts/sync_maps.sh [map-name|/root/maps/name.yaml]"
-      echo "Default: ${MAP_PATH}"
+      echo "Usage: ./scripts/robot.sh sync-maps <map-name|/root/maps/name.yaml>"
+      echo "This command is only for maps saved on the Jetson host."
       return 0
+      ;;
+    "")
+      echo "Usage: ./scripts/robot.sh sync-maps <map-name|/root/maps/name.yaml>" >&2
+      echo "The default repository map does not need synchronization." >&2
+      return 1
       ;;
   esac
 
@@ -138,22 +153,6 @@ cmd_sync_maps() {
   sync_map_from_host "$container" "$docker_map_path"
 }
 
-cmd_setup_kiosk() {
-  ensure_tmux
-  local container kiosk_url validation_url
-  container="$(require_container)"
-
-  ensure_qr_decoder_in_docker "$container"
-
-  kiosk_url="$(resolve_kiosk_url 2>/dev/null || true)"
-  validation_url="$(resolve_reception_validation_url 2>/dev/null || true)"
-
-  echo "[setup-kiosk] container=${container}"
-  echo "[setup-kiosk] kiosk=${kiosk_url:-<set APP_HOST with ./scripts/robot.sh config app-host <mac-ip>>}"
-  echo "[setup-kiosk] validation=${validation_url:-<set APP_HOST with ./scripts/robot.sh config app-host <mac-ip>>}"
-  echo "[setup-kiosk] done"
-}
-
 cmd_launch() {
   case "${1:-}" in
     help|-h|--help)
@@ -162,7 +161,6 @@ cmd_launch() {
       return 0
       ;;
   esac
-
   local map_arg="${1:-}"
   if [ -n "$map_arg" ]; then
     MAP_PATH="$(resolve_map_path_arg "$map_arg")"
@@ -179,24 +177,176 @@ cmd_launch() {
   ensure_map_in_docker "$container" "$MAP_PATH"
   ensure_qr_decoder_in_docker "$container"
 
+  # The base MCU owns odometry and the /cmd_vel subscriber. Wake and verify it
+  # immediately after bringup so Nav2 never starts with a broken TF/base chain.
+  start_service bringup "$container"
+  disable_legacy_joystick_control "$container"
+  cmd_mcu
+
   local s
-  for s in bringup camera nav vision reception web; do
+  for s in camera nav vision reception web; do
     start_service "$s" "$container"
   done
+  if ! wait_for_web_ready "$container"; then
+    stop_service web "$container"
+    return 1
+  fi
+  wait_for_navigation_ready "$container"
+  wait_for_dashboard_hardware_ready "$container" true true
 
   open_kiosk_browser
-  echo "launch" > "${LAST_PROFILE_FILE}"
   echo "[launch] saved-map navigation and kiosk started"
 
-  cmd_mcu
   echo
   cmd_status
+}
+
+ensure_demo_backend() {
+  local app_url deadline
+  app_url="$(resolve_app_url "/" "")" || return 1
+
+  case "$DEMO_START_LARAVEL" in
+    true)
+      if [ ! -x "${REPO_ROOT}/reservationApp/vendor/bin/sail" ]; then
+        echo "[demo] Laravel Sail is unavailable. Run Composer installation first." >&2
+        return 1
+      fi
+      echo "[demo] starting Laravel services through Sail"
+      (
+        cd "${REPO_ROOT}/reservationApp"
+        ./vendor/bin/sail up -d
+      )
+      ;;
+    false) ;;
+    *)
+      echo "[demo] DEMO_START_LARAVEL must be true or false" >&2
+      return 1
+      ;;
+  esac
+
+  if ! [[ "$DEMO_BACKEND_START_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[demo] DEMO_BACKEND_START_TIMEOUT_SEC must be a positive integer" >&2
+    return 1
+  fi
+  deadline=$((SECONDS + DEMO_BACKEND_START_TIMEOUT_SEC))
+  while (( SECONDS < deadline )); do
+    if curl --silent --show-error \
+      --output /dev/null \
+      --connect-timeout 2 \
+      --max-time 3 \
+      "$app_url"; then
+      echo "[demo] Laravel reachable at ${app_url}"
+      return 0
+    fi
+    sleep 1
+  done
+
+  echo "[demo] Laravel did not become reachable at ${app_url}" >&2
+  return 1
+}
+
+cmd_demo() {
+  case "${1:-${DEFAULT_DEMO_MAP}}" in
+    help|-h|--help)
+      echo "Usage: ./scripts/robot.sh demo [home|school]"
+      echo "Default demo map: ${DEFAULT_DEMO_MAP}"
+      return 0
+      ;;
+    home)
+      RECEPTION_WAYPOINT_CONFIG_PATH="$HOME_RECEPTION_WAYPOINT_CONFIG_PATH"
+      MAP_PATH="$HOME_MAP_PATH"
+      ;;
+    school)
+      if [ -z "$SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH" ]; then
+        echo "[demo] School reception coordinates are not configured yet." >&2
+        echo "[demo] Set SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH after measuring Reception, Mante Inc Room, and Bayer Inc Room." >&2
+        return 1
+      fi
+      RECEPTION_WAYPOINT_CONFIG_PATH="$SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH"
+      MAP_PATH="$SCHOOL_MAP_PATH"
+      ;;
+    *)
+      echo "Usage: ./scripts/robot.sh demo [home|school]" >&2
+      return 1
+      ;;
+  esac
+
+  local demo_map="${1:-${DEFAULT_DEMO_MAP}}"
+  resolve_reception_validation_url >/dev/null
+  resolve_kiosk_url >/dev/null
+  ensure_demo_backend
+
+  if [ "$DEMO_CLEAN_START" = "true" ]; then
+    echo "[demo] stopping stale services before the ${demo_map} demo"
+    cmd_stop all
+  elif [ "$DEMO_CLEAN_START" != "false" ]; then
+    echo "[demo] DEMO_CLEAN_START must be true or false" >&2
+    return 1
+  fi
+
+  local demo_profile
+  case "$DEMO_REAL_NAVIGATION" in
+    true)
+      if [ -z "$MAP_PATH" ] || [ -z "$RECEPTION_WAYPOINT_CONFIG_PATH" ]; then
+        echo "[demo] real navigation requires explicit map and waypoint paths" >&2
+        return 1
+      fi
+      AUTOMATIC_RETURN_ENABLED="$REAL_AUTOMATIC_RETURN_ENABLED"
+      demo_profile=demo-navigation
+      ;;
+    false)
+      AUTOMATIC_RETURN_ENABLED=true
+      demo_profile=stationary-reception-real
+      ;;
+    *)
+      echo "[demo] DEMO_REAL_NAVIGATION must be true or false" >&2
+      return 1
+      ;;
+  esac
+
+  if ! cmd_start "$demo_profile"; then
+    echo "[demo] service startup failed; stopping the partial demo stack" >&2
+    cmd_stop "$demo_profile"
+    return 1
+  fi
+  if [ "$DEMO_REAL_NAVIGATION" = "true" ]; then
+    local container
+    container="$(require_container)"
+    if ! wait_for_real_reception_navigation_ready "$container"; then
+      echo "[demo] navigation readiness failed; stopping the partial demo stack" >&2
+      cmd_stop "$demo_profile"
+      return 1
+    fi
+  fi
+  if ! open_kiosk_browser; then
+    echo "[demo] kiosk failed; stopping the partial demo stack" >&2
+    cmd_stop "$demo_profile"
+    return 1
+  fi
+
+  echo "[demo] ${demo_map} reception ready"
+  if [ "$DEMO_REAL_NAVIGATION" = "true" ]; then
+    echo "[demo] REAL NAVIGATION ACTIVE: verified outbound guidance can move the robot"
+    if [ "$REAL_AUTOMATIC_RETURN_ENABLED" = "true" ]; then
+      echo "[demo] B5 return enabled: Reception return can also move the robot"
+    else
+      echo "[demo] B4 mode: automatic Reception return is disabled"
+    fi
+  else
+    echo "[demo] real camera/voice/QR/Laravel; forced simulated guidance and return"
+  fi
 }
 
 cmd_start() {
   local target="${1:-}"
   local map_arg="${2:-}"
-  [ -n "$target" ] || { echo "Usage: ./scripts/robot.sh start <service|base|map|navigate|all>" >&2; exit 1; }
+  [ -n "$target" ] || { echo "Usage: ./scripts/robot.sh start <service|base|map|navigate|reception|voice|camera-qr|stationary-reception|stationary-reception-real|kiosk>" >&2; exit 1; }
+  case "$target" in
+    all|robot)
+      echo "Unsupported broad profile: ${target}" >&2
+      exit 1
+      ;;
+  esac
 
   if [ "$target" = "navigate" ] && [ -n "$map_arg" ]; then
     MAP_PATH="$(resolve_map_path_arg "$map_arg")"
@@ -209,25 +359,81 @@ cmd_start() {
   local services
   services="$(expand_profile "$target")"
   if [[ " ${services} " == *" vision "* ]]; then
-    ensure_qr_decoder_in_docker "$container"
+    if ! ensure_qr_decoder_in_docker "$container" || \
+       ! validate_person_detection_config "$container"; then
+      return 1
+    fi
   fi
   if [[ " ${services} " == *" reception "* ]]; then
-    resolve_reception_validation_url >/dev/null
+    if ! resolve_reception_validation_url >/dev/null; then
+      return 1
+    fi
   fi
-  if [ "$target" = "kiosk" ] || [ "$target" = "robot" ] || [ "$target" = "launch" ]; then
-    resolve_kiosk_url >/dev/null
+  if [[ " ${services} " == *" voice "* ]]; then
+    if ! ensure_webrtc_microphone || ! validate_voice_config "$container"; then
+      return 1
+    fi
+  fi
+  if [ "$target" = "kiosk" ] || [ "$target" = "launch" ]; then
+    if ! resolve_kiosk_url >/dev/null; then
+      return 1
+    fi
+  fi
+
+  # Profiles with robot bringup require a live base before localization, Nav2,
+  # or dashboard teleop can be considered ready.
+  if [[ " ${services} " == *" bringup "* ]]; then
+    if ! start_service bringup "$container" || \
+       ! disable_legacy_joystick_control "$container" || \
+       ! cmd_mcu; then
+      return 1
+    fi
   fi
 
   local s
   for s in $services; do
-    start_service "$s" "$container"
+    [ "$s" = "bringup" ] && continue
+    if ! start_service "$s" "$container"; then
+      return 1
+    fi
+    # Validate the lightweight dashboard before starting Nav2's larger set of
+    # processes. This prevents startup contention on the Jetson and makes the
+    # failing service unambiguous.
+    if [ "$s" = "web" ]; then
+      if ! wait_for_web_ready "$container"; then
+        stop_service web "$container"
+        return 1
+      fi
+    fi
   done
+  if [[ " ${services} " == *" nav "* ]]; then
+    if ! wait_for_navigation_ready "$container"; then
+      return 1
+    fi
+  fi
+  if [[ " ${services} " == *" bringup "* ]] && \
+     [[ " ${services} " == *" web "* ]]; then
+    local require_motion=false
+    if [[ " ${services} " == *" teleop "* ]] || \
+       [[ " ${services} " == *" nav "* ]] || \
+       [[ " ${services} " == *" slam "* ]]; then
+      require_motion=true
+    fi
+    if ! wait_for_dashboard_hardware_ready "$container" true "$require_motion"; then
+      return 1
+    fi
+  fi
+  if [ "$target" = "stationary-reception" ] || \
+     [ "$target" = "stationary-reception-real" ]; then
+    if ! wait_for_stationary_reception_ready "$container" "$target"; then
+      return 1
+    fi
+  fi
 
-  if [ "$target" = "kiosk" ] || [ "$target" = "robot" ] || [ "$target" = "launch" ]; then
+  if [ "$target" = "kiosk" ] || [ "$target" = "launch" ]; then
     open_kiosk_browser
   fi
 
-  echo "$target" > "${LAST_PROFILE_FILE}"
   echo "[start] ${target} started. Logs: ./scripts/robot.sh logs <service>"
 }
 
@@ -267,7 +473,8 @@ cmd_stop() {
     services="${ALL_SERVICES}"
     _ssh "tmux kill-session -t ${FOXGLOVE_SESSION} 2>/dev/null || true"
     stop_kiosk_browser
-  elif [ "$target" = "kiosk" ] || [ "$target" = "robot" ] || [ "$target" = "launch" ]; then
+  elif [ "$target" = "kiosk" ] || [ "$target" = "launch" ] || \
+       [ "$target" = "demo" ]; then
     services="$(expand_profile "$target")"
     stop_kiosk_browser
   else
@@ -281,10 +488,7 @@ cmd_stop() {
 
 cmd_restart() {
   local target="${1:-}"
-  if [ -z "$target" ]; then
-    target="$(cat "${LAST_PROFILE_FILE}" 2>/dev/null || true)"
-    [ -n "$target" ] || { echo "No previous mode. Use: ./scripts/robot.sh restart <mode>" >&2; exit 1; }
-  fi
+  [ -n "$target" ] || { echo "Usage: ./scripts/robot.sh restart <mode>" >&2; exit 1; }
   cmd_stop all
   sleep 2
   cmd_start "$target"
@@ -294,59 +498,44 @@ cmd_mcu() {
   local force=""
   [ "${1:-}" = "--force" ] && force=1
 
-  local container agent
+  local container session_established=false
   container="$(require_container)"
-  agent="$(resolve_agent_container)"
-  [ -n "$agent" ] || { echo "No active micro-ROS agent container found." >&2; exit 1; }
 
-  echo "[mcu] robot=${container} agent=${agent} topic=${MCU_PROBE_TOPIC}"
+  echo "[mcu] robot=${container} service=${MICRO_ROS_SERVICE} topic=${MCU_PROBE_TOPIC}"
   if [ -z "$force" ] && mcu_is_alive "$container"; then
     echo "[mcu] base board is already publishing"
   else
-    echo "[mcu] restarting micro-ROS agent"
-    _ssh "docker restart ${agent}" >/dev/null
+    if ! restart_micro_ros_service; then
+      report_mcu_diagnostics "$container"
+      exit 1
+    fi
+    echo "[mcu] waiting for the MCU XRCE session"
+    if wait_for_micro_ros_session; then
+      session_established=true
+      echo "[mcu] MCU XRCE session established"
+    else
+      echo "[mcu] no XRCE session marker found in the agent log; continuing with the message probe" >&2
+    fi
+    echo "[mcu] waiting up to 30 seconds for ${MCU_PROBE_TOPIC}"
     if ! wait_for_mcu "$container"; then
-      echo "[mcu] base board is still silent. Use the physical reset button." >&2
+      report_mcu_diagnostics "$container"
+      if [ "$session_established" = true ]; then
+        echo "[mcu] XRCE is connected and ROS publishers exist, but the MCU firmware is not streaming data." >&2
+        echo "[mcu] Stop here and use the board's documented physical reset or power-cycle procedure before retrying." >&2
+      fi
+      echo "[mcu] ${MCU_PROBE_TOPIC} was discovered or expected, but no message was received after service recovery." >&2
       exit 1
     fi
   fi
 
-  _ssh "docker exec -e ROS_DOMAIN_ID=${ROS_DOMAIN_ID} -e FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS} ${container} bash -lc '
-    source /opt/ros/humble/setup.bash 2>/dev/null
-    for t in /odom_raw /imu/data_raw /joint_states; do
-      printf \"  %-16s \" \"\$t\"
-      timeout 5 ros2 topic hz \$t 2>/dev/null | grep \"average rate\" | head -1 || echo \"silent\"
-    done'"
-}
-
-cmd_recover() {
-  ensure_tmux
-  local profile="${1:-}"
-  if [ -z "$profile" ]; then
-    profile="$(cat "${LAST_PROFILE_FILE}" 2>/dev/null || true)"
-    [ -n "$profile" ] || profile="map"
-  fi
-
-  local container
-  container="$(require_container)"
-  echo "[recover] mode=${profile} container=${container}"
-
-  if [[ " $(expand_profile "$profile") " == *" nav "* ]]; then
-    ensure_map_in_docker "$container" "$MAP_PATH"
-  fi
-
-  ensure_evo_ws_built "$container"
-
-  cmd_start "$profile"
-  cmd_mcu
-  echo
-  cmd_status
+  echo "[mcu] ready: ${MCU_PROBE_TOPIC} is live"
 }
 
 cmd_map_foxglove() {
   ensure_tmux
   local container
   container="$(require_container)"
+  require_evo_ws_built "$container"
   require_foxglove_bridge "$container"
 
   ROSBRIDGE=true cmd_start map
@@ -356,10 +545,36 @@ cmd_map_foxglove() {
 
 Mapping is running.
 Foxglove: ws://${JETSON_IP}:${FOXGLOVE_PORT}
-Dashboard rosbridge: ws://${JETSON_IP}:9090
+Dashboard rosbridge: ws://${JETSON_IP}:${ROSBRIDGE_PORT}
 
 When finished:
   ./scripts/robot.sh save-map ground_floor
+  ./scripts/robot.sh map stop
+EOF
+}
+
+cmd_map_rviz() {
+  ensure_tmux
+  local container
+  container="$(require_container)"
+  require_evo_ws_built "$container"
+
+  if _ssh "tmux has-session -t evo_slam 2>/dev/null"; then
+    echo "[rviz] the SLAM service is already running." >&2
+    echo "[rviz] stop it before changing display mode: ./scripts/robot.sh map stop" >&2
+    return 1
+  fi
+
+  prepare_robot_display "$container"
+  SLAM_RVIZ=true cmd_start map
+  wait_for_rviz "$container"
+
+  cat <<EOF
+
+Mapping is running with RViz on the robot display.
+
+When finished:
+  ./scripts/robot.sh save-map school_v2
   ./scripts/robot.sh map stop
 EOF
 }
@@ -388,7 +603,7 @@ cmd_map_status() {
   echo "Robot: ${JETSON_USER}@${JETSON_IP}"
   echo "Container: ${container}"
   echo "Foxglove: ws://${JETSON_IP}:${FOXGLOVE_PORT}"
-  echo "Dashboard rosbridge: ws://${JETSON_IP}:9090"
+  echo "Dashboard rosbridge: ws://${JETSON_IP}:${ROSBRIDGE_PORT}"
   echo
   _ssh "tmux ls 2>/dev/null | grep -E '^evo_(bringup|camera|slam|web|foxglove):' || echo 'mapping stack is not running'"
 }
@@ -403,14 +618,16 @@ cmd_map_stop() {
 }
 
 cmd_map() {
-  case "${1:-foxglove}" in
+  case "${1:-}" in
+    rviz) cmd_map_rviz ;;
     foxglove|start) cmd_map_foxglove ;;
     status) cmd_map_status ;;
     stop) cmd_map_stop ;;
     save) shift; cmd_save_map "${1:-}" ;;
     help|-h|--help)
-      echo "Usage: ./scripts/robot.sh map foxglove|status|stop|save [map-name]"
+      echo "Usage: ./scripts/robot.sh map rviz|foxglove|status|stop|save [map-name]"
       ;;
+    "") echo "Usage: ./scripts/robot.sh map rviz|foxglove|status|stop|save [map-name]" >&2; exit 1 ;;
     *) echo "Unknown map command: $1" >&2; exit 1 ;;
   esac
 }
@@ -425,6 +642,11 @@ cmd_status() {
 
   echo "tmux sessions:"
   _ssh "tmux ls 2>/dev/null | grep '^evo_' || echo 'none'"
+
+  echo
+  echo "micro-ROS service:"
+  _ssh "systemctl is-active ${MICRO_ROS_SERVICE} 2>/dev/null || true"
+
   [ -n "$container" ] || return 0
 
   echo
@@ -440,23 +662,7 @@ cmd_status() {
 
   echo
   _port_check "${CAMERA_PORT}" "camera/web"
-  _port_check 9090 "rosbridge"
-}
-
-cmd_safety() {
-  local container
-  container="$(require_container)"
-
-  echo "Stationary navigation safety:"
-  _ssh "docker exec ${container} bash -lc '$(_ros_prelude)
-    ros2 param get /navigation_orchestrator_node mock_navigation
-    ros2 param get /navigation_orchestrator_node allow_real_navigation
-    echo Actions:
-    ros2 action list
-    echo Navigation-status-topic:
-    ros2 topic info /reception/navigation/status
-    echo Cmd-vel-topic:
-    ros2 topic info /cmd_vel || echo /cmd_vel-not-present_expected-in-stationary-only-mode'"
+  _port_check "${ROSBRIDGE_PORT}" "rosbridge"
 }
 
 _port_check() {
@@ -475,7 +681,22 @@ cmd_health() {
 cmd_logs() {
   local name="${1:-}"
   [ -n "$name" ] || { echo "Usage: ./scripts/robot.sh logs <service>" >&2; exit 1; }
-  _ssh_tty "tmux attach -t evo_${name}"
+  local log_path
+  log_path="$(remote_quote "${SERVICE_LOG_DIR}/evo_${name}.log")"
+  _ssh_tty "
+    if tmux has-session -t evo_${name} 2>/dev/null; then
+      tmux attach -t evo_${name}
+    elif [ -f ${log_path} ]; then
+      echo '[logs] service is not running; showing startup and final output'
+      echo '--- startup ---'
+      sed -n '1,80p' ${log_path}
+      echo '--- final ---'
+      tail -n 120 ${log_path}
+    else
+      echo '[logs] no running session or captured log for evo_${name}' >&2
+      exit 1
+    fi
+  "
 }
 
 _set_local() {
@@ -498,10 +719,48 @@ cmd_config() {
       echo "JETSON_IP=${JETSON_IP:-<not configured>}"
       echo "JETSON_USER=${JETSON_USER}"
       echo "CONTAINER=${CONTAINER}"
+      echo "AGENT_CONTAINER=${AGENT_CONTAINER}"
+      echo "MICRO_ROS_SERVICE=${MICRO_ROS_SERVICE}"
+      echo "MICRO_ROS_SERIAL_DEVICE=${MICRO_ROS_SERIAL_DEVICE}"
+      echo "MCU_PROBE_TOPIC=${MCU_PROBE_TOPIC}"
       echo "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+      echo "SLAM_USE_COLLISION_MONITOR=${SLAM_USE_COLLISION_MONITOR}"
+      echo "NAV_USE_COLLISION_MONITOR=${NAV_USE_COLLISION_MONITOR}"
       echo "APP_HOST=${APP_HOST:-${detected_app_host:-<auto unavailable>}}"
       echo "APP_PORT=${APP_PORT}"
+      echo "CAMERA_PORT=${CAMERA_PORT}"
+      echo "ROSBRIDGE_PORT=${ROSBRIDGE_PORT}"
+      echo "PERSON_DETECTION_ENABLED=${PERSON_DETECTION_ENABLED}"
+      echo "PERSON_DETECTION_MODEL_PATH=${PERSON_DETECTION_MODEL_PATH}"
+      echo "PERSON_DETECTION_CONFIDENCE=${PERSON_DETECTION_CONFIDENCE}"
+      echo "PERSON_DETECTION_NMS=${PERSON_DETECTION_NMS}"
+      echo "PERSON_DETECTION_MAX_FPS=${PERSON_DETECTION_MAX_FPS}"
+      echo "APPROACH_MIN_CONFIDENCE=${APPROACH_MIN_CONFIDENCE}"
+      echo "APPROACH_MIN_DISTANCE_M=${APPROACH_MIN_DISTANCE_M}"
+      echo "APPROACH_MAX_DISTANCE_M=${APPROACH_MAX_DISTANCE_M}"
+      echo "APPROACH_DEBOUNCE_FRAMES=${APPROACH_DEBOUNCE_FRAMES}"
+      echo "APPROACH_COOLDOWN_SEC=${APPROACH_COOLDOWN_SEC}"
+      echo "PRESENCE_GREETING_FALLBACK_SEC=${PRESENCE_GREETING_FALLBACK_SEC}"
+      echo "INTENT_TIMEOUT_SEC=${INTENT_TIMEOUT_SEC}"
+      echo "QR_INACTIVITY_TIMEOUT_SEC=${QR_INACTIVITY_TIMEOUT_SEC}"
+      echo "RECEPTION_ALLOWED_DESTINATION_IDS=${RECEPTION_ALLOWED_DESTINATION_IDS}"
+      echo "RECEPTION_WAYPOINT_CONFIG_PATH=${RECEPTION_WAYPOINT_CONFIG_PATH:-<Home default>}"
+      echo "DEFAULT_DEMO_MAP=${DEFAULT_DEMO_MAP}"
+      echo "HOME_RECEPTION_WAYPOINT_CONFIG_PATH=${HOME_RECEPTION_WAYPOINT_CONFIG_PATH:-<packaged Home registry>}"
+      echo "SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH=${SCHOOL_RECEPTION_WAYPOINT_CONFIG_PATH:-<not configured>}"
+      echo "DEMO_START_LARAVEL=${DEMO_START_LARAVEL}"
+      echo "DEMO_REAL_NAVIGATION=${DEMO_REAL_NAVIGATION}"
+      echo "HOME_MAP_PATH=${HOME_MAP_PATH:-<not configured>}"
+      echo "SCHOOL_MAP_PATH=${SCHOOL_MAP_PATH:-<not configured>}"
+      echo "REAL_NAVIGATION_TIMEOUT_SEC=${REAL_NAVIGATION_TIMEOUT_SEC}"
+      echo "REAL_LOCALIZATION_TIMEOUT_SEC=${REAL_LOCALIZATION_TIMEOUT_SEC}"
+      echo "REAL_MAX_LOCALIZATION_XY_VARIANCE=${REAL_MAX_LOCALIZATION_XY_VARIANCE}"
+      echo "REAL_AUTOMATIC_RETURN_ENABLED=${REAL_AUTOMATIC_RETURN_ENABLED}"
+      echo "STT_MODEL_PATH=${STT_MODEL_PATH:-<not configured>}"
+      echo "WEBRTC_MIC_ENABLED=${WEBRTC_MIC_ENABLED}"
+      echo "WEBRTC_MIC_SOURCE_NAME=${WEBRTC_MIC_SOURCE_NAME}"
       echo "DEFAULT_MAP_NAME=${DEFAULT_MAP_NAME}"
+      echo "PACKAGED_MAP_PATH=${PACKAGED_MAP_PATH}"
       echo "MAP_PATH=${MAP_PATH}"
       echo "DOCKER_MAP_DIR=${DOCKER_MAP_DIR}"
       echo "HOST_MAP_DIR=${HOST_MAP_DIR}"
@@ -520,10 +779,9 @@ cmd_config() {
 }
 
 case "${1:-}" in
+  demo)     shift; cmd_demo "$@" ;;
   launch)   shift; cmd_launch "$@" ;;
-  recover)  shift; cmd_recover "$@" ;;
   setup)    shift; cmd_setup "$@" ;;
-  setup-kiosk) shift; cmd_setup_kiosk "$@" ;;
   sync-maps) shift; cmd_sync_maps "$@" ;;
   kiosk)    shift; cmd_kiosk "$@" ;;
   start)    shift; cmd_start "$@" ;;
@@ -534,7 +792,6 @@ case "${1:-}" in
   restart)  shift; cmd_restart "$@" ;;
   mcu)      shift; cmd_mcu "$@" ;;
   status)   shift; cmd_status "$@" ;;
-  safety)   shift; cmd_safety "$@" ;;
   health)   shift; cmd_health "$@" ;;
   logs)     shift; cmd_logs "$@" ;;
   config)   shift; cmd_config "$@" ;;

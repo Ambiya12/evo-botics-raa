@@ -1,11 +1,5 @@
 source/
 
-# Claude Code / outils IA (ne jamais committer)
-CLAUDE.md
-.claude/
-docs/checkpoint/
-docs/superpowers/
-
 # Bridge Python ROS local (non suivi, voir CLAUDE.md)
 reservationApp/bridge/
 
@@ -24,6 +18,8 @@ evo_ws/src/**/.pytest_cache/
 # Exclude environment-specific files
 .env
 .DS_Store
+scripts/robot/config.local.sh
+scripts/robot/.last_profile
 
 # Dependency directories
 node_modules/
