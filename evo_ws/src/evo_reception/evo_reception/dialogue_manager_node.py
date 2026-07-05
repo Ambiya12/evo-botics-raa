@@ -13,7 +13,7 @@ import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from evo_reception.dialogue_manager import (
     DialogueEvent,
@@ -26,6 +26,7 @@ from evo_reception.qr_integration import (
     QrScanGate,
     QrValidationOutcome,
     ScanDecision,
+    parse_destination_ids,
 )
 
 
@@ -35,16 +36,35 @@ class DialogueManagerNode(Node):
     def __init__(self) -> None:
         super().__init__("dialogue_manager_node")
         max_retries = int(self.declare_parameter("max_retries", 2).value)
-        self.inactivity_timeout_sec = float(
-            self.declare_parameter("inactivity_timeout_sec", 20.0).value
+        self.intent_timeout_sec = float(
+            self.declare_parameter("intent_timeout_sec", 45.0).value
+        )
+        self.qr_inactivity_timeout_sec = float(
+            self.declare_parameter("qr_inactivity_timeout_sec", 20.0).value
+        )
+        self.presence_greeting_fallback_sec = float(
+            self.declare_parameter(
+                "presence_greeting_fallback_sec", 2.0
+            ).value
+        )
+        self.automatic_return_enabled = bool(
+            self.declare_parameter("automatic_return_enabled", True).value
         )
         timer_period_sec = float(
             self.declare_parameter("timer_period_sec", 0.2).value
         )
         if max_retries < 0:
             raise ValueError("'max_retries' must be non-negative")
-        if self.inactivity_timeout_sec <= 0.0:
-            raise ValueError("'inactivity_timeout_sec' must be greater than zero")
+        if self.intent_timeout_sec <= 0.0:
+            raise ValueError("'intent_timeout_sec' must be greater than zero")
+        if self.qr_inactivity_timeout_sec <= 0.0:
+            raise ValueError(
+                "'qr_inactivity_timeout_sec' must be greater than zero"
+            )
+        if self.presence_greeting_fallback_sec < 0.0:
+            raise ValueError(
+                "'presence_greeting_fallback_sec' must be non-negative"
+            )
         if timer_period_sec <= 0.0:
             raise ValueError("'timer_period_sec' must be greater than zero")
 
@@ -56,6 +76,9 @@ class DialogueManagerNode(Node):
         )
         tts_status_topic = str(
             self.declare_parameter("tts_status_topic", "/voice/tts/status").value
+        )
+        stt_status_topic = str(
+            self.declare_parameter("stt_status_topic", "/voice/stt/status").value
         )
         event_topic = str(
             self.declare_parameter(
@@ -90,10 +113,22 @@ class DialogueManagerNode(Node):
                 "approach_topic", "/vision/people/approach"
             ).value
         )
+        presence_topic = str(
+            self.declare_parameter(
+                "presence_topic", "/vision/people/presence"
+            ).value
+        )
         workflow_status_topic = str(
             self.declare_parameter(
                 "workflow_status_topic", "/reception/workflow/status"
             ).value
+        )
+        self.allowed_destination_ids = parse_destination_ids(
+            str(
+                self.declare_parameter(
+                    "allowed_destination_ids_csv", "1,2"
+                ).value
+            )
         )
 
         self.manager = DialogueManager(max_retries=max_retries)
@@ -106,6 +141,10 @@ class DialogueManagerNode(Node):
         self.session_counter = 0
         self.session_id = ""
         self.deadline: float | None = None
+        self.deadline_event: DialogueEvent | None = None
+        self.paused_intent_deadline_remaining: float | None = None
+        self.tts_ready = False
+        self.visitor_present = False
         self.tts_status_tracker = TtsStatusTracker()
         self.tts_request_publisher = self.create_publisher(
             String, tts_request_topic, 10
@@ -130,9 +169,20 @@ class DialogueManagerNode(Node):
         self.create_subscription(
             String, tts_status_topic, self.on_tts_status, tts_status_qos
         )
+        self.create_subscription(
+            String, stt_status_topic, self.on_stt_status, tts_status_qos
+        )
         self.create_subscription(String, event_topic, self.on_external_event, 10)
         self.create_subscription(
             PersonApproach, approach_topic, self.on_person_approach, 10
+        )
+        presence_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(
+            Bool, presence_topic, self.on_person_presence, presence_qos
         )
         self.create_subscription(
             String, qr_detections_topic, self.on_qr_detection, 10
@@ -161,19 +211,82 @@ class DialogueManagerNode(Node):
         self.apply(self.manager.handle_intent(message.intent))
 
     def on_person_approach(self, message: PersonApproach) -> None:
+        if not self.tts_ready:
+            self.get_logger().info(
+                "Deferring visitor approach until TTS is ready"
+            )
+            return
         self.apply(
             self.manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
         )
 
+    def on_person_presence(self, message: Bool) -> None:
+        self.visitor_present = bool(message.data)
+        self.get_logger().info(
+            f"Received presence={str(message.data).lower()} "
+            f"state={self.manager.state.value}"
+        )
+        if message.data and not self.tts_ready:
+            self.get_logger().info(
+                "Deferring presence activation until TTS is ready"
+            )
+            return
+        event = (
+            DialogueEvent.VISITOR_APPROACHED
+            if message.data
+            else DialogueEvent.VISITOR_LEFT
+        )
+        self.apply(self.manager.handle_event(event))
+
     def on_tts_status(self, message: String) -> None:
         status = message.data.strip().lower()
+        if not self.tts_ready:
+            self.tts_ready = True
+            self.get_logger().info(f"TTS ready with status={status}")
+            if (
+                self.visitor_present
+                and self.manager.state == DialogueState.IDLE
+            ):
+                self.apply(
+                    self.manager.handle_event(
+                        DialogueEvent.VISITOR_APPROACHED
+                    )
+                )
         if status == "speaking":
             self.deadline = None
+            self.deadline_event = None
         event = self.tts_status_tracker.update(status)
         if event == DialogueEvent.TTS_COMPLETED:
             self.handle_tts_completed()
         elif event == DialogueEvent.TTS_FAILED:
             self.apply(self.manager.handle_event(DialogueEvent.TTS_FAILED))
+
+    def on_stt_status(self, message: String) -> None:
+        status = message.data.strip().lower()
+        if (
+            status == "transcribing"
+            and self.manager.state == DialogueState.WAITING_FOR_INTENT
+            and self.deadline is not None
+        ):
+            self.paused_intent_deadline_remaining = max(
+                0.0, self.deadline - time.monotonic()
+            )
+            self.deadline = None
+            self.deadline_event = None
+            self.get_logger().info(
+                "Paused intent deadline while STT is transcribing"
+            )
+        elif status == "idle" and self.paused_intent_deadline_remaining is not None:
+            if self.manager.state == DialogueState.WAITING_FOR_INTENT:
+                self.deadline = (
+                    time.monotonic()
+                    + self.paused_intent_deadline_remaining
+                )
+                self.deadline_event = DialogueEvent.INACTIVITY_TIMEOUT
+                self.get_logger().info(
+                    "Resumed intent deadline after STT transcription"
+                )
+            self.paused_intent_deadline_remaining = None
 
     def handle_tts_completed(self) -> None:
         transition = self.manager.handle_event(DialogueEvent.TTS_COMPLETED)
@@ -189,10 +302,16 @@ class DialogueManagerNode(Node):
             and self.manager.state == DialogueState.ARRIVED
             and self.manager.return_to_reception_ready
         ):
-            self.request_navigation(
-                destination_id="reception",
-                returning=True,
-            )
+            if self.automatic_return_enabled:
+                self.request_navigation(
+                    destination_id="reception",
+                    returning=True,
+                )
+            else:
+                self.get_logger().warning(
+                    "Automatic Reception return is disabled; remaining at "
+                    "the destination for controlled-site B4 acceptance"
+                )
 
     def on_external_event(self, message: String) -> None:
         try:
@@ -213,6 +332,8 @@ class DialogueManagerNode(Node):
             DialogueEvent.NAVIGATION_STARTED,
             DialogueEvent.NAVIGATION_ARRIVED,
             DialogueEvent.NAVIGATION_FAILED,
+            DialogueEvent.VISITOR_LEFT,
+            DialogueEvent.PRESENCE_GREETING_TIMEOUT,
         }:
             self.get_logger().warning(
                 f"Ignoring internally owned dialogue event: {event.value}"
@@ -291,10 +412,24 @@ class DialogueManagerNode(Node):
                 self.manager.handle_qr_result(QrValidationOutcome.UNAVAILABLE)
             )
             return
+        destination_id = response.destination_id.strip()
+        if (
+            outcome == QrValidationOutcome.VALID
+            and destination_id not in self.allowed_destination_ids
+        ):
+            self.get_logger().error(
+                "Validated QR returned an unsupported destination ID"
+            )
+            self.apply(
+                self.manager.handle_qr_result(
+                    QrValidationOutcome.UNAVAILABLE
+                )
+            )
+            return
         self.apply(
             self.manager.handle_qr_result(
                 outcome,
-                destination_id=response.destination_id,
+                destination_id=destination_id,
             )
         )
 
@@ -420,10 +555,10 @@ class DialogueManagerNode(Node):
     def on_timer(self) -> None:
         if self.deadline is None or time.monotonic() < self.deadline:
             return
+        event = self.deadline_event or DialogueEvent.INACTIVITY_TIMEOUT
         self.deadline = None
-        self.apply(
-            self.manager.handle_event(DialogueEvent.INACTIVITY_TIMEOUT)
-        )
+        self.deadline_event = None
+        self.apply(self.manager.handle_event(event))
 
     def apply(self, transition: Transition) -> None:
         if not transition.accepted:
@@ -440,7 +575,7 @@ class DialogueManagerNode(Node):
         if transition.changed:
             if (
                 transition.previous == DialogueState.IDLE
-                and transition.current == DialogueState.GREETING
+                and transition.current == DialogueState.PRESENCE_ARMED
             ):
                 self.session_counter += 1
                 self.session_id = f"session-{self.session_counter}"
@@ -467,15 +602,33 @@ class DialogueManagerNode(Node):
         )
 
     def refresh_deadline(self, transition: Transition) -> None:
+        if transition.changed:
+            self.paused_intent_deadline_remaining = None
         if transition.speech:
             self.deadline = None
-        elif self.manager.state in {
-            DialogueState.WAITING_FOR_INTENT,
-            DialogueState.WAITING_FOR_QR,
-        }:
-            self.deadline = time.monotonic() + self.inactivity_timeout_sec
+            self.deadline_event = None
+        elif self.manager.state == DialogueState.PRESENCE_ARMED:
+            if self.presence_greeting_fallback_sec > 0.0:
+                self.deadline_event = DialogueEvent.PRESENCE_GREETING_TIMEOUT
+                self.deadline = (
+                    time.monotonic() + self.presence_greeting_fallback_sec
+                )
+            else:
+                # Presence owns the armed lifetime. Stay ready for a greeting
+                # until the vision pipeline publishes VISITOR_LEFT.
+                self.deadline = None
+                self.deadline_event = None
+        elif self.manager.state == DialogueState.WAITING_FOR_INTENT:
+            self.deadline = time.monotonic() + self.intent_timeout_sec
+            self.deadline_event = DialogueEvent.INACTIVITY_TIMEOUT
+        elif self.manager.state == DialogueState.WAITING_FOR_QR:
+            self.deadline = (
+                time.monotonic() + self.qr_inactivity_timeout_sec
+            )
+            self.deadline_event = DialogueEvent.INACTIVITY_TIMEOUT
         else:
             self.deadline = None
+            self.deadline_event = None
 
     def publish_state(self) -> None:
         self.state_publisher.publish(String(data=self.manager.state.value))

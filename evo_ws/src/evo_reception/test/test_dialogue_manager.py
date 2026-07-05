@@ -11,6 +11,7 @@ from evo_reception.qr_integration import QrValidationOutcome
 
 def start_session(manager: DialogueManager) -> None:
     manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+    manager.handle_intent("greeting")
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
     assert manager.state == DialogueState.WAITING_FOR_INTENT
 
@@ -21,13 +22,15 @@ def test_happy_path_reaches_arrival_and_resets() -> None:
     assert manager.state == DialogueState.IDLE
     assert manager.handle_event(
         DialogueEvent.VISITOR_APPROACHED
-    ).speech == ("greeting",)
-    assert manager.state == DialogueState.GREETING
+    ).speech == ()
+    assert manager.state == DialogueState.PRESENCE_ARMED
 
+    assert manager.handle_intent("greeting").speech == ("greeting",)
+    assert manager.state == DialogueState.GREETING
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
     assert manager.state == DialogueState.WAITING_FOR_INTENT
 
-    assert manager.handle_intent("reservation").speech == ("request_qr",)
+    assert manager.handle_intent("affirmative").speech == ("request_qr",)
     assert manager.state == DialogueState.WAITING_FOR_QR
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
 
@@ -94,6 +97,69 @@ def test_unknown_intent_repeats_then_enters_error() -> None:
     assert manager.state == DialogueState.ERROR
 
 
+def test_negative_answer_ends_session_without_requesting_qr() -> None:
+    manager = DialogueManager()
+    start_session(manager)
+
+    transition = manager.handle_intent("negative")
+
+    assert transition.speech == ("no_reservation",)
+    assert manager.state == DialogueState.IDLE
+    assert manager.destination_id is None
+
+
+def test_reservation_intent_remains_an_affirmative_fallback() -> None:
+    manager = DialogueManager()
+    start_session(manager)
+
+    transition = manager.handle_intent("reservation")
+
+    assert transition.speech == ("request_qr",)
+    assert manager.state == DialogueState.WAITING_FOR_QR
+
+
+def test_greeting_without_detected_presence_is_ignored() -> None:
+    manager = DialogueManager()
+
+    transition = manager.handle_intent("greeting")
+
+    assert not transition.accepted
+    assert manager.state == DialogueState.IDLE
+
+
+def test_person_leaving_disarms_before_greeting() -> None:
+    manager = DialogueManager()
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    transition = manager.handle_event(DialogueEvent.VISITOR_LEFT)
+
+    assert transition.accepted
+    assert manager.state == DialogueState.IDLE
+    assert not manager.handle_intent("greeting").accepted
+
+
+def test_presence_fallback_greets_without_spoken_hello() -> None:
+    manager = DialogueManager()
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    transition = manager.handle_event(
+        DialogueEvent.PRESENCE_GREETING_TIMEOUT
+    )
+
+    assert transition.speech == ("greeting",)
+    assert manager.state == DialogueState.GREETING
+
+
+def test_presence_armed_remains_ready_until_visitor_leaves() -> None:
+    manager = DialogueManager()
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    transition = manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    assert not transition.accepted
+    assert manager.state == DialogueState.PRESENCE_ARMED
+
+
 def test_cancellation_resets_session() -> None:
     manager = DialogueManager()
     start_session(manager)
@@ -122,7 +188,7 @@ def test_inactivity_timeout_enters_error_then_resets_safely() -> None:
 def test_qr_cannot_be_accepted_before_prompt_completes() -> None:
     manager = DialogueManager()
     start_session(manager)
-    manager.handle_intent("check_in")
+    manager.handle_intent("affirmative")
 
     transition = manager.handle_event(DialogueEvent.QR_DETECTED)
 

@@ -20,14 +20,24 @@ def generate_launch_description():
     destination_id = LaunchConfiguration("destination_id")
     navigation_outcome = LaunchConfiguration("navigation_outcome")
     max_retries = LaunchConfiguration("max_retries")
+    waypoint_config_path = LaunchConfiguration("waypoint_config_path")
+    default_waypoints = PathJoinSubstitution([
+        FindPackageShare("evo_navigation"),
+        "config",
+        "home_reception_waypoints.yaml",
+    ])
 
     return LaunchDescription([
         DeclareLaunchArgument("reservation_outcome", default_value="valid"),
         DeclareLaunchArgument("destination_id", default_value="1"),
         DeclareLaunchArgument("navigation_outcome", default_value="arrived"),
-        DeclareLaunchArgument("max_retries", default_value="0"),
+        DeclareLaunchArgument("max_retries", default_value="2"),
         DeclareLaunchArgument(
-            "transcript_text", default_value="I have a reservation"
+            "waypoint_config_path",
+            default_value=default_waypoints,
+        ),
+        DeclareLaunchArgument(
+            "transcript_text", default_value="Yes, I do"
         ),
 
         package_launch(
@@ -55,6 +65,7 @@ def generate_launch_description():
             "stationary_orchestrator.launch.py",
             {
                 "mock_outcome": navigation_outcome,
+                "waypoint_config_path": waypoint_config_path,
             },
         ),
         package_launch(

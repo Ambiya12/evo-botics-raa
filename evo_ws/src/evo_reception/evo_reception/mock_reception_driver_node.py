@@ -17,8 +17,11 @@ class MockReceptionDriverNode(Node):
         super().__init__("mock_reception_driver_node")
         self.transcript_text = str(
             self.declare_parameter(
-                "transcript_text", "I have a reservation"
+                "transcript_text", "Yes, I do"
             ).value
+        )
+        self.greeting_text = str(
+            self.declare_parameter("greeting_text", "Hi Evo").value
         )
         self.qr_payload = str(
             self.declare_parameter("qr_payload", "mock-signed-payload").value
@@ -75,6 +78,7 @@ class MockReceptionDriverNode(Node):
         self.started = False
         self.completed = False
         self.frames_published = 0
+        self.greeting_published = False
         self.transcript_published = False
         self.qr_published = False
         self.get_logger().info("End-to-end mock reception driver ready")
@@ -104,13 +108,11 @@ class MockReceptionDriverNode(Node):
 
         if elapsed < self.stage_delay_sec:
             return
-        if self.state == "WAITING_FOR_INTENT" and not self.transcript_published:
-            transcript = Transcript()
-            transcript.header.stamp = self.get_clock().now().to_msg()
-            transcript.text = self.transcript_text
-            transcript.language = "en"
-            transcript.confidence = 1.0
-            self.transcript_publisher.publish(transcript)
+        if self.state == "PRESENCE_ARMED" and not self.greeting_published:
+            self.publish_transcript(self.greeting_text)
+            self.greeting_published = True
+        elif self.state == "WAITING_FOR_INTENT" and not self.transcript_published:
+            self.publish_transcript(self.transcript_text)
             self.transcript_published = True
         elif self.state == "WAITING_FOR_QR" and not self.qr_published:
             event = {
@@ -122,6 +124,14 @@ class MockReceptionDriverNode(Node):
                 String(data=json.dumps(event, separators=(",", ":")))
             )
             self.qr_published = True
+
+    def publish_transcript(self, text: str) -> None:
+        transcript = Transcript()
+        transcript.header.stamp = self.get_clock().now().to_msg()
+        transcript.text = text
+        transcript.language = "en"
+        transcript.confidence = 1.0
+        self.transcript_publisher.publish(transcript)
 
     def publish_detection(self) -> None:
         detection = PersonDetection()

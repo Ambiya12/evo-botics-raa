@@ -95,6 +95,17 @@ def successful_validation_data(body: object) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def parse_destination_ids(value: str) -> frozenset[str]:
+    destination_ids = frozenset(
+        item.strip() for item in value.split(",") if item.strip()
+    )
+    if not destination_ids:
+        raise ValueError(
+            "At least one allowed destination ID must be configured"
+        )
+    return destination_ids
+
+
 class QrScanGate:
     """Allows one QR validation only during the dialogue QR waiting state."""
 
