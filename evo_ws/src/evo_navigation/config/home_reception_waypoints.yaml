@@ -1,0 +1,20 @@
+# Reception waypoints measured in the Home map frame.
+# B0-B3 controlled-site acceptance was confirmed on 2026-07-04.
+frame_id: map
+hardware_validated: true
+
+waypoints:
+  reception:
+    x: -0.03
+    y: 0.83
+    yaw: -1.74
+  # Mante Inc Room. Laravel reservation responses identify it as room_id 1.
+  "1":
+    x: -0.80
+    y: 0.35
+    yaw: -2.64
+  # Bayer Inc Room. Laravel reservation responses identify it as room_id 2.
+  "2":
+    x: -0.01
+    y: 1.08
+    yaw: 1.55

@@ -168,6 +168,14 @@ class NavigationOrchestratorNode(Node):
                 "mock_estop_active", False if self.mock_navigation else True
             ).value
         )
+        self.localization_timeout_sec = float(
+            self.declare_parameter("localization_timeout_sec", 2.0).value
+        )
+        self.max_localization_xy_variance = float(
+            self.declare_parameter(
+                "max_localization_xy_variance", 0.5
+            ).value
+        )
         self.localization_ready = bool(
             self.declare_parameter(
                 "mock_localization_ready", self.mock_navigation
@@ -178,6 +186,13 @@ class NavigationOrchestratorNode(Node):
         )
         if self.navigation_timeout_sec <= 0.0:
             raise ValueError("'navigation_timeout_sec' must be greater than zero")
+        if self.localization_timeout_sec <= 0.0:
+            raise ValueError("'localization_timeout_sec' must be greater than zero")
+        if self.max_localization_xy_variance <= 0.0:
+            raise ValueError(
+                "'max_localization_xy_variance' must be greater than zero"
+            )
+        self.localization_last_seen_at = 0.0
 
         self.registry = WaypointRegistry.from_yaml(registry_path)
         self.navigation_mode = validate_navigation_mode(
@@ -207,7 +222,12 @@ class NavigationOrchestratorNode(Node):
         self.status_publisher = self.create_publisher(
             NavigationStatus, status_topic, status_qos
         )
-        self.create_subscription(Bool, estop_topic, self.on_estop, status_qos)
+        estop_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.VOLATILE,
+        )
+        self.create_subscription(Bool, estop_topic, self.on_estop, estop_qos)
         if not self.mock_navigation:
             self.create_subscription(
                 PoseWithCovarianceStamped,
@@ -256,9 +276,16 @@ class NavigationOrchestratorNode(Node):
             if self.mock_navigation
             else bool(self.nav2_navigator and self.nav2_navigator.ready())
         )
+        localization_ready = self.localization_ready
+        if not self.mock_navigation:
+            localization_ready = (
+                localization_ready
+                and time.monotonic() - self.localization_last_seen_at
+                <= self.localization_timeout_sec
+            )
         return NavigationGates(
             estop_active=self.estop_active,
-            localization_ready=self.localization_ready,
+            localization_ready=localization_ready,
             nav2_ready=nav2_ready,
         )
 
@@ -266,7 +293,17 @@ class NavigationOrchestratorNode(Node):
         self.estop_active = message.data
 
     def on_localization(self, message: PoseWithCovarianceStamped) -> None:
-        self.localization_ready = bool(message.header.frame_id)
+        covariance = message.pose.covariance
+        x_variance = float(covariance[0])
+        y_variance = float(covariance[7])
+        self.localization_ready = (
+            message.header.frame_id == "map"
+            and math.isfinite(x_variance)
+            and math.isfinite(y_variance)
+            and 0.0 <= x_variance <= self.max_localization_xy_variance
+            and 0.0 <= y_variance <= self.max_localization_xy_variance
+        )
+        self.localization_last_seen_at = time.monotonic()
 
     def accept_goal(self, goal_request) -> GoalResponse:
         if self.active_goal_handle is not None:
