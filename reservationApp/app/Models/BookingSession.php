@@ -20,6 +20,7 @@ class BookingSession extends Model
     ];
 
     protected $casts = [
+        'room_id' => 'integer',
         'date' => 'date',
         'is_available' => 'boolean',
     ];

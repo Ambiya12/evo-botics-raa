@@ -103,4 +103,27 @@ class ReservationQrValidationTest extends TestCase
             ->assertJsonPath('error_code', 'expired')
             ->assertJsonPath('data.uuid', $reservation->uuid);
     }
+
+    public function test_unsupported_room_is_rejected_without_consuming_reservation(): void
+    {
+        config(['evo.navigable_room_ids' => [999999]]);
+        $reservation = Reservation::factory()->create(['status' => 'pending']);
+        $qrPayload = ReservationQrPayload::encode(
+            ReservationQrPayload::forReservation($reservation)
+        );
+
+        $response = $this->postJson('/api/reservations/validate', [
+            'qr_payload' => $qrPayload,
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('error_code', 'unsupported_room');
+
+        $this->assertDatabaseHas('reservations', [
+            'id' => $reservation->id,
+            'status' => 'pending',
+        ]);
+    }
 }
