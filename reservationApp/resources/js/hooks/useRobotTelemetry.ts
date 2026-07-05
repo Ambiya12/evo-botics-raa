@@ -11,7 +11,6 @@ import type {
 } from '@/Components/Robot/types';
 import {
     armFromArmMessage,
-    armFromJointState,
     diagnosticsFromMessage,
     normalizeBattery,
     poseFromOdom,
@@ -19,14 +18,15 @@ import {
 } from '@/Components/Robot/transforms';
 
 export const HEARTBEAT_TOPICS: Array<Pick<TopicHeartbeat, 'key' | 'label' | 'topic'>> = [
+    { key: 'battery', label: 'Base battery', topic: '/battery' },
     { key: 'map', label: 'Map', topic: '/map' },
     { key: 'odom', label: 'Odometry', topic: '/odom' },
     { key: 'amcl', label: 'AMCL', topic: '/amcl_pose' },
     { key: 'scan', label: 'LiDAR', topic: '/scan' },
     { key: 'imu', label: 'IMU', topic: '/imu/data' },
-    { key: 'rgb', label: 'RGB camera', topic: '/camera/color/image_raw' },
-    { key: 'depth', label: 'Depth camera', topic: '/camera/depth/image_raw' },
-    { key: 'arm', label: 'Arm joints', topic: '/joint_states' },
+    { key: 'rgb', label: 'RGB camera', topic: '/camera/color/camera_info' },
+    { key: 'depth', label: 'Depth camera', topic: '/camera/depth/camera_info' },
+    { key: 'arm', label: 'Arm command route', topic: '/arm6_joints' },
 ];
 
 const initialHeartbeats = (): TopicHeartbeat[] => HEARTBEAT_TOPICS.map((topic) => ({
@@ -37,6 +37,7 @@ const initialHeartbeats = (): TopicHeartbeat[] => HEARTBEAT_TOPICS.map((topic) =
 
 export type RobotTelemetry = {
     map: OccupancyGrid | null;
+    costmap: OccupancyGrid | null;
     path: NavPath | null;
     pose: RobotPose | null;
     battery: BatteryState | null;
@@ -49,6 +50,7 @@ export type RobotTelemetry = {
 
 export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
     const [map, setMap] = useState<OccupancyGrid | null>(null);
+    const [costmap, setCostmap] = useState<OccupancyGrid | null>(null);
     const [path, setPath] = useState<NavPath | null>(null);
     const [pose, setPose] = useState<RobotPose | null>(null);
     const [battery, setBattery] = useState<BatteryState | null>(null);
@@ -71,6 +73,10 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
             setMap(message as OccupancyGrid);
             markTopic('map');
         }, { type: 'nav_msgs/msg/OccupancyGrid', throttleRate: 500 });
+
+        const unsubscribeCostmap = ros.subscribe('/global_costmap/costmap', (message) => {
+            setCostmap(message as OccupancyGrid);
+        }, { type: 'nav_msgs/msg/OccupancyGrid', throttleRate: 3000 });
 
         const unsubscribeOdom = ros.subscribe('/odom', (message) => {
             const odomPose = poseFromOdom(message);
@@ -100,6 +106,7 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
         const unsubscribeBattery = ros.subscribe('/battery', (message: any) => {
             const next = normalizeBattery(Number(message?.data));
             setBattery(next);
+            markTopic('battery');
             if (next.level !== lastBatteryLevelRef.current) {
                 if (next.level === 'low') ros.addLog(`Battery low: ${next.displayValue}`, 'warn');
                 if (next.level === 'critical') ros.addLog(`Battery critical: ${next.displayValue}`, 'error');
@@ -111,33 +118,33 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
             setDiagnostics(diagnosticsFromMessage(message));
         }, { type: 'diagnostic_msgs/msg/DiagnosticArray', throttleRate: 1000 });
 
-        const unsubscribeArm6 = ros.subscribe('/arm6_joints', (message) => {
+        // Yahboom does not expose servo-position feedback. Its /joint_states
+        // publisher contains a synthetic URDF state with model-specific names,
+        // so mirror the command that actually reached the MCU input topic.
+        const unsubscribeArmCommands = ros.subscribe('/arm6_joints', (message) => {
+            markTopic('arm');
             const next = armFromArmMessage(message);
             if (next) setArmJoints(next);
-        }, { type: 'arm_msgs/msg/ArmJoints', throttleRate: 300 });
-
-        const unsubscribeJointStates = ros.subscribe('/joint_states', (message) => {
-            markTopic('arm');
-            const next = armFromJointState(message);
-            if (next) setArmJoints(next);
-        }, { type: 'sensor_msgs/msg/JointState', throttleRate: 500 });
+        }, { type: 'arm_msgs/msg/ArmJoints', throttleRate: 100 });
 
         const heartbeatUnsubscribers = [
             ros.subscribe('/scan', () => markTopic('scan'), { type: 'sensor_msgs/msg/LaserScan', throttleRate: 1000 }),
             ros.subscribe('/imu/data', () => markTopic('imu'), { type: 'sensor_msgs/msg/Imu', throttleRate: 1000 }),
-            ros.subscribe('/camera/color/image_raw', () => markTopic('rgb'), { type: 'sensor_msgs/msg/Image', throttleRate: 1000 }),
-            ros.subscribe('/camera/depth/image_raw', () => markTopic('depth'), { type: 'sensor_msgs/msg/Image', throttleRate: 1000 }),
+            // CameraInfo provides the same liveness signal without making
+            // rosbridge serialize multi-megabyte raw image frames.
+            ros.subscribe('/camera/color/camera_info', () => markTopic('rgb'), { type: 'sensor_msgs/msg/CameraInfo', throttleRate: 1000 }),
+            ros.subscribe('/camera/depth/camera_info', () => markTopic('depth'), { type: 'sensor_msgs/msg/CameraInfo', throttleRate: 1000 }),
         ];
 
         return () => {
             unsubscribeMap();
+            unsubscribeCostmap();
             unsubscribeOdom();
             unsubscribeAmclPose();
             unsubscribePath();
             unsubscribeBattery();
             unsubscribeDiagnostics();
-            unsubscribeArm6();
-            unsubscribeJointStates();
+            unsubscribeArmCommands();
             heartbeatUnsubscribers.forEach((unsubscribe) => unsubscribe());
         };
     }, [markTopic, ros]);
@@ -146,6 +153,6 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
     const diagnosticsLevel = diagnostics.length ? Math.max(...diagnostics.map((item) => item.level)) : null;
 
     return useMemo(() => ({
-        map, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel,
-    }), [map, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel]);
+        map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel,
+    }), [map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel]);
 }

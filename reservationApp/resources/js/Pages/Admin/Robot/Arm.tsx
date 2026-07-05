@@ -6,13 +6,17 @@ import { useRobotContext } from '@/Components/Robot/RobotContext';
 import type { LayoutComponent } from '@/types/inertia';
 
 const Arm: LayoutComponent = () => {
-    const { ros, telemetry } = useRobotContext();
+    const { ros, status, telemetry } = useRobotContext();
 
     return (
         <>
             <Head title="Robot — Arm" />
             <div className="grid gap-6 lg:grid-cols-2">
-                <ArmControlPanel currentJoints={telemetry.armJoints} ros={ros} />
+                <ArmControlPanel
+                    connected={status === 'connected'}
+                    currentJoints={telemetry.armJoints}
+                    ros={ros}
+                />
                 <ArmStateView joints={telemetry.armJoints} />
             </div>
         </>

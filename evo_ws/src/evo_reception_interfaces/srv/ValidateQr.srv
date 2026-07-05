@@ -1,0 +1,12 @@
+string request_id
+string qr_payload
+---
+uint8 VALID=0
+uint8 INVALID=1
+uint8 EXPIRED=2
+uint8 DUPLICATE=3
+uint8 UNAVAILABLE=4
+uint8 outcome
+string request_id
+string destination_id
+string message

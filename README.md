@@ -30,6 +30,36 @@ The solution is an autonomous service robot capable of:
 - Guiding visitors to room waypoints
 - Providing a web admin interface and notifications
 
+## Reception demo
+
+The maintained one-command reception demo is:
+
+```bash
+./scripts/robot.sh demo
+```
+
+The shared default is the School deployment. The current robot's ignored
+`scripts/robot/config.local.sh` selects Home, so the same command currently
+starts the Home demo. An explicit selection is also available:
+
+```bash
+./scripts/robot.sh demo home
+./scripts/robot.sh demo school
+```
+
+The command cleanly stops stale services, starts real camera/person detection,
+real WebRTC microphone/STT, Piper TTS, real QR decoding, real Laravel
+validation, dialogue, the kiosk, and navigation. On the accepted controlled-site
+Home configuration it starts `/root/maps/home.yaml`, AMCL, Nav2, and the
+hardware-authorized reception orchestrator. Valid room IDs physically guide to
+Mante Inc Room or Bayer Inc Room. Automatic physical return remains gated off
+for B4 and can be enabled for B5 after B4 acceptance. The shared repository
+default remains movement-disabled; real movement requires the private
+`DEMO_REAL_NAVIGATION=true` setting.
+
+See [scripts/README.md](scripts/README.md) for configuration, deployment,
+verification, and rollback instructions.
+
 * * *
 
 ## Objectives

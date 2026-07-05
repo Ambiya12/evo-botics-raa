@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ArmJoints, RosApi } from './types';
 
 type Props = {
+    connected: boolean;
     currentJoints: ArmJoints | null;
     ros: RosApi;
 };
@@ -37,7 +38,7 @@ const PRESETS: Record<string, ArmJoints> = {
 
 const clampJoint = (value: number, joint: JointConfig) => Math.max(joint.min, Math.min(joint.max, Math.round(value)));
 
-export default function ArmControlPanel({ currentJoints, ros }: Props) {
+export default function ArmControlPanel({ connected, currentJoints, ros }: Props) {
     const [enabled, setEnabled] = useState(false);
     const [holdEnabled, setHoldEnabled] = useState(false);
     const [draft, setDraft] = useState<ArmJoints>(HOME);
@@ -48,6 +49,12 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
             setDraft(currentJoints);
         }
     }, [currentJoints, enabled]);
+
+    useEffect(() => {
+        if (connected) return;
+        setEnabled(false);
+        setHoldEnabled(false);
+    }, [connected]);
 
     const sanitizedDraft = useMemo(() => {
         const next = { ...draft, time: Math.max(100, Math.min(3000, Math.round(draft.time))) };
@@ -62,9 +69,12 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
             ros.addLog('Arm command ignored because arm control is locked.', 'warn');
             return;
         }
-        ros.publish('/arm6_joints', 'arm_msgs/msg/ArmJoints', message);
+        const sent = ros.publish('/evo/arm/command', 'arm_msgs/msg/ArmJoints', message);
         if (shouldLog) {
-            ros.addLog(`${reason}: [${JOINTS.map((joint) => message[joint.key]).join(', ')}]`, 'ok');
+            ros.addLog(
+                `${reason} ${sent ? 'sent' : 'failed'}: [${JOINTS.map((joint) => message[joint.key]).join(', ')}]`,
+                sent ? 'ok' : 'error',
+            );
         }
     };
 
@@ -101,19 +111,26 @@ export default function ArmControlPanel({ currentJoints, ros }: Props) {
             <div className="flex items-start justify-between gap-3">
                 <div>
                     <h3 className="text-sm font-semibold text-gray-900">Arm Control</h3>
-                    <p className="text-xs text-gray-500">Publishes /arm6_joints in servo degrees</p>
+                    <p className="text-xs text-gray-500">Publishes /evo/arm/command in servo degrees</p>
                 </div>
                 <button
                     className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${enabled ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    disabled={!connected}
                     onClick={() => {
                         setEnabled((value) => !value);
                         setHoldEnabled(false);
                     }}
                     type="button"
                 >
-                    {enabled ? 'Arm Unlocked' : 'Arm Locked'}
+                    {enabled ? 'Lock Arm' : 'Unlock Arm'}
                 </button>
             </div>
+
+            {!connected && (
+                <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                    Arm control unavailable: rosbridge is disconnected.
+                </p>
+            )}
 
             <div className="mt-4 grid grid-cols-3 gap-2">
                 {Object.keys(PRESETS).map((name) => (

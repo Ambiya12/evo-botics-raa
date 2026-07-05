@@ -27,6 +27,12 @@ type Subscriber = {
     callback: (message: unknown) => void;
 };
 
+type Publisher = {
+    id: string;
+    topic: string;
+    type: string;
+};
+
 type SubscribeOptions = {
     type?: string;
     throttleRate?: number;
@@ -42,6 +48,7 @@ const MAX_LOGS = 120;
 export function useRosBridge(url: string, enabled = true) {
     const socketRef = useRef<WebSocket | null>(null);
     const reconnectTimerRef = useRef<number | null>(null);
+    const publishersRef = useRef<Map<string, Publisher>>(new Map());
     const subscribersRef = useRef<Map<string, Subscriber>>(new Map());
     const requestIdRef = useRef(0);
     const logIdRef = useRef(0);
@@ -67,15 +74,27 @@ export function useRosBridge(url: string, enabled = true) {
         if (!socket || socket.readyState !== WebSocket.OPEN) {
             if (!silent) {
                 addLog('ROS command ignored because rosbridge is not connected.', 'warn');
+                console.error('[rosbridge] Outbound payload dropped: socket is not open', payload);
             }
             return false;
         }
 
+        console.debug('[rosbridge] Sending payload', payload);
         socket.send(JSON.stringify(payload));
         return true;
     }, [addLog]);
 
     const resubscribe = useCallback(() => {
+        publishersRef.current.forEach((publisher) => {
+            send({
+                op: 'advertise',
+                id: publisher.id,
+                topic: publisher.topic,
+                type: publisher.type,
+                queue_size: 10,
+                latch: false,
+            });
+        });
         subscribersRef.current.forEach((sub, id) => {
             send({
                 op: 'subscribe',
@@ -85,6 +104,38 @@ export function useRosBridge(url: string, enabled = true) {
                 throttle_rate: sub.options.throttleRate,
             });
         });
+    }, [send]);
+
+    const ensurePublisher = useCallback((topic: string, type: string) => {
+        const current = publishersRef.current.get(topic);
+        if (current?.type === type) {
+            return true;
+        }
+
+        if (current) {
+            send({ op: 'unadvertise', id: current.id, topic }, true);
+            publishersRef.current.delete(topic);
+        }
+
+        const publisher = {
+            id: `pub:${topic}:${++requestIdRef.current}`,
+            topic,
+            type,
+        };
+        const advertised = send({
+            op: 'advertise',
+            id: publisher.id,
+            topic,
+            type,
+            queue_size: 10,
+            latch: false,
+        });
+        if (!advertised) {
+            return false;
+        }
+
+        publishersRef.current.set(topic, publisher);
+        return true;
     }, [send]);
 
     useEffect(() => {
@@ -98,7 +149,15 @@ export function useRosBridge(url: string, enabled = true) {
         const connect = () => {
             setStatus('connecting');
             addLog(`Connecting to ${url}`, 'info');
-            const socket = new WebSocket(url);
+            let socket: WebSocket;
+            try {
+                socket = new WebSocket(url);
+            } catch {
+                setStatus('error');
+                addLog('Invalid rosbridge URL. Check the robot host and ROS port.', 'error');
+                return;
+            }
+
             socketRef.current = socket;
 
             socket.onopen = () => {
@@ -122,6 +181,12 @@ export function useRosBridge(url: string, enabled = true) {
                             sub.callback(data.msg);
                         }
                     });
+                } else if (data.op === 'service_response') {
+                    console.info('[rosbridge] Service response', data);
+                    addLog(
+                        `Service response ${data.service ?? data.id ?? ''}: ${data.result === false ? 'failed' : 'received'}`,
+                        data.result === false ? 'error' : 'ok',
+                    );
                 }
             };
 
@@ -177,12 +242,16 @@ export function useRosBridge(url: string, enabled = true) {
     }, [send]);
 
     const publish = useCallback((topic: string, type: string, msg: unknown) => {
-        const ok = send({ op: 'publish', topic, type, msg });
+        if (!ensurePublisher(topic, type)) {
+            return false;
+        }
+        const payload = { op: 'publish', topic, type, msg };
+        const ok = send(payload);
         if (ok) {
-            addLog(`Published ${topic}`, 'info');
+            addLog(`Sent ${topic} to rosbridge: ${JSON.stringify(msg)}`, 'info');
         }
         return ok;
-    }, [addLog, send]);
+    }, [addLog, ensurePublisher, send]);
 
     const callService = useCallback((service: string, options: ServiceOptions = {}) => {
         const id = `srv:${service}:${++requestIdRef.current}`;

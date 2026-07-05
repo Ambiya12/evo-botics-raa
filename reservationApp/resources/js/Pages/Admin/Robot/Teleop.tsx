@@ -5,13 +5,16 @@ import { useRobotContext } from '@/Components/Robot/RobotContext';
 import type { LayoutComponent } from '@/types/inertia';
 
 const Teleop: LayoutComponent = () => {
-    const { ros } = useRobotContext();
+    const { ros, status } = useRobotContext();
 
     return (
         <>
             <Head title="Robot — Teleop" />
             <div className="max-w-md">
-                <ManualControls ros={ros} />
+                <ManualControls
+                    connected={status === 'connected'}
+                    ros={ros}
+                />
             </div>
         </>
     );

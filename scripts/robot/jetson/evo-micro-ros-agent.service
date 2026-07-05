@@ -1,0 +1,31 @@
+[Unit]
+Description=EVO micro-ROS agent container
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=HOME=/root
+Environment=MICRO_ROS_AGENT_CONTAINER=evo-micro-ros-agent
+Environment=MICRO_ROS_SERIAL_DEVICE=/dev/myserial
+Environment=MICRO_ROS_SERIAL_BAUD=2000000
+Environment=MICRO_ROS_AGENT_VERBOSITY=4
+Environment=ROS_DOMAIN_ID=30
+Environment=FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+Environment=MICROROS_DISABLE_SHM=1
+EnvironmentFile=-/etc/default/evo-micro-ros-agent
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+ExecStartPre=/bin/bash -c 'for i in {1..60}; do test -e "$MICRO_ROS_SERIAL_DEVICE" && exit 0; sleep 1; done; echo "$MICRO_ROS_SERIAL_DEVICE did not appear" >&2; exit 1'
+ExecStartPre=-/bin/bash -c '/usr/bin/docker rm -f "$MICRO_ROS_AGENT_CONTAINER"'
+ExecStart=/bin/bash -c 'exec /usr/bin/docker run --rm --init --name "$MICRO_ROS_AGENT_CONTAINER" --network host --privileged --volume /dev:/dev --volume /dev/shm:/dev/shm --env ROS_DOMAIN_ID="$ROS_DOMAIN_ID" --env FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" --env RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" --env MICROROS_DISABLE_SHM="$MICROROS_DISABLE_SHM" "$MICRO_ROS_AGENT_IMAGE" serial --dev "$MICRO_ROS_SERIAL_DEVICE" -b "$MICRO_ROS_SERIAL_BAUD" -v"$MICRO_ROS_AGENT_VERBOSITY"'
+ExecStop=/bin/bash -c '/usr/bin/docker stop -t 10 "$MICRO_ROS_AGENT_CONTAINER"'
+SuccessExitStatus=143
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

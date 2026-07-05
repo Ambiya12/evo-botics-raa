@@ -24,6 +24,8 @@ public:
     const auto reset_topic = declare_parameter<std::string>("reset_topic", "/e_stop_reset");
     const auto status_topic = declare_parameter<std::string>("status_topic", "/e_stop_active");
     const auto zero_hz = declare_parameter<double>("zero_publish_hz", 20.0);
+    teleop_priority_timeout_s_ =
+      declare_parameter<double>("teleop_priority_timeout_s", 0.3);
 
     cmd_pub_ = create_publisher<geometry_msgs::msg::Twist>(output_topic, 10);
 
@@ -34,12 +36,16 @@ public:
     nav_sub_ = create_subscription<geometry_msgs::msg::Twist>(
         nav_topic, 10,
         [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+          if (teleopHasPriority()) {
+            return;
+          }
           forwardIfSafe(*msg);
         });
 
     teleop_sub_ = create_subscription<geometry_msgs::msg::Twist>(
         teleop_topic, 10,
         [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
+          last_teleop_time_ = now();
           forwardIfSafe(*msg);
         });
 
@@ -71,12 +77,19 @@ public:
     publishEstopStatus();
     RCLCPP_INFO(
         get_logger(),
-        "cmd_vel safety gate ready: nav=%s teleop=%s output=%s estop=%s reset=%s",
+        "cmd_vel safety gate ready: nav=%s teleop=%s output=%s estop=%s reset=%s "
+        "teleop_priority_timeout=%.2fs",
         nav_topic.c_str(), teleop_topic.c_str(), output_topic.c_str(),
-        estop_topic.c_str(), reset_topic.c_str());
+        estop_topic.c_str(), reset_topic.c_str(), teleop_priority_timeout_s_);
   }
 
 private:
+  bool teleopHasPriority() const
+  {
+    return last_teleop_time_.nanoseconds() != 0 &&
+           (now() - last_teleop_time_).seconds() <= teleop_priority_timeout_s_;
+  }
+
   void forwardIfSafe(const geometry_msgs::msg::Twist & msg)
   {
     if (estop_active_) {
@@ -121,6 +134,8 @@ private:
   }
 
   bool estop_active_{false};
+  double teleop_priority_timeout_s_{0.3};
+  rclcpp::Time last_teleop_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr estop_status_pub_;
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr nav_sub_;

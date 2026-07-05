@@ -11,7 +11,8 @@ const STATUS_STYLES: Record<RosStatus, string> = {
 };
 
 export default function RobotHeader() {
-    const { ros, status, rosUrl } = useRobotContext();
+    const { config, ros, status, rosUrl } = useRobotContext();
+    const rosLabel = rosUrl || 'Robot IP not configured';
 
     return (
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -23,8 +24,8 @@ export default function RobotHeader() {
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${STATUS_STYLES[status]}`}>
                     {status.toUpperCase()}
                 </span>
-                <span className="hidden truncate text-xs text-gray-500 sm:inline">{rosUrl}</span>
-                <EmergencyStopButton ros={ros} />
+                <span className="hidden truncate text-xs text-gray-500 sm:inline">{rosLabel}</span>
+                <EmergencyStopButton navigationActionName={config.navigationActionName} ros={ros} />
             </div>
         </div>
     );

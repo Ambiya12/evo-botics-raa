@@ -1,0 +1,6 @@
+[Desktop Entry]
+Encoding=UTF-8
+Type=Application
+Name=EVO ROS Container
+Exec=lxterminal -e bash -lc "sleep 5 && /home/jetson/evo-ros-start.sh"
+Terminal=true

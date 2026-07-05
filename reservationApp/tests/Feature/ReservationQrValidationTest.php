@@ -28,6 +28,7 @@ class ReservationQrValidationTest extends TestCase
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('data.uuid', $reservation->uuid)
             ->assertJsonPath('data.customer_name', $reservation->customer_name)
+            ->assertJsonPath('data.room_id', $reservation->bookingSession->room_id)
             ->assertJsonPath('data.room', $reservation->bookingSession->room->name)
             ->assertJsonPath('data.date', $reservation->bookingSession->date->format('Y-m-d'))
             ->assertJsonPath('data.start_at', $reservation->bookingSession->start_at)
@@ -82,6 +83,24 @@ class ReservationQrValidationTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('status', 'error')
             ->assertJsonPath('error_code', 'already_used')
+            ->assertJsonPath('data.uuid', $reservation->uuid);
+    }
+
+    public function test_expired_reservation_returns_expired_error_code(): void
+    {
+        $reservation = Reservation::factory()->create(['status' => 'expired']);
+        $qrPayload = ReservationQrPayload::encode(
+            ReservationQrPayload::forReservation($reservation)
+        );
+
+        $response = $this->postJson('/api/reservations/validate', [
+            'qr_payload' => $qrPayload,
+        ]);
+
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('error_code', 'expired')
             ->assertJsonPath('data.uuid', $reservation->uuid);
     }
 }

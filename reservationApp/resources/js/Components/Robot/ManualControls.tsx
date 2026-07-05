@@ -2,25 +2,33 @@ import { useEffect, useMemo, useState } from 'react';
 import type { RosApi } from './types';
 
 type Props = {
+    connected: boolean;
     ros: RosApi;
 };
 
 const KEYS = ['w', 'a', 's', 'd', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', ' '] as const;
 
-export default function ManualControls({ ros }: Props) {
+export default function ManualControls({ connected, ros }: Props) {
     const [speed, setSpeed] = useState(0.16);
     const [turnSpeed, setTurnSpeed] = useState(0.7);
     const [teleopEnabled, setTeleopEnabled] = useState(false);
     const [pressed, setPressed] = useState<Record<string, boolean>>({});
+    const [buttonCommand, setButtonCommand] = useState<{ angularZ: number; linearX: number } | null>(null);
 
     const twist = useMemo(() => {
         let linearX = 0;
         let angularZ = 0;
 
-        if (pressed.w || pressed.ArrowUp) linearX += speed;
-        if (pressed.s || pressed.ArrowDown) linearX -= speed;
-        if (pressed.a || pressed.ArrowLeft) angularZ += turnSpeed;
-        if (pressed.d || pressed.ArrowRight) angularZ -= turnSpeed;
+        if (buttonCommand) {
+            linearX = buttonCommand.linearX;
+            angularZ = buttonCommand.angularZ;
+        } else {
+            if (pressed.w || pressed.ArrowUp) linearX += speed;
+            if (pressed.s || pressed.ArrowDown) linearX -= speed;
+            if (pressed.a || pressed.ArrowLeft) angularZ += turnSpeed;
+            if (pressed.d || pressed.ArrowRight) angularZ -= turnSpeed;
+        }
+
         if (pressed[' ']) {
             linearX = 0;
             angularZ = 0;
@@ -30,7 +38,7 @@ export default function ManualControls({ ros }: Props) {
             linear: { x: linearX, y: 0, z: 0 },
             angular: { x: 0, y: 0, z: angularZ },
         };
-    }, [pressed, speed, turnSpeed]);
+    }, [buttonCommand, pressed, speed, turnSpeed]);
 
     const sendTwist = (linearX: number, angularZ: number) => {
         ros.publish('/cmd_vel_teleop', 'geometry_msgs/msg/Twist', {
@@ -41,8 +49,25 @@ export default function ManualControls({ ros }: Props) {
 
     const stop = () => sendTwist(0, 0);
 
+    const startButtonCommand = (linearX: number, angularZ: number) => {
+        setButtonCommand({ linearX, angularZ });
+        sendTwist(linearX, angularZ);
+    };
+
+    const stopButtonCommand = () => {
+        setButtonCommand(null);
+        stop();
+    };
+
     useEffect(() => {
-        if (!teleopEnabled) {
+        if (connected) return;
+        setTeleopEnabled(false);
+        setPressed({});
+        setButtonCommand(null);
+    }, [connected]);
+
+    useEffect(() => {
+        if (!teleopEnabled && !buttonCommand) {
             return;
         }
 
@@ -51,7 +76,7 @@ export default function ManualControls({ ros }: Props) {
         }, 120);
 
         return () => window.clearInterval(timer);
-    }, [ros, teleopEnabled, twist]);
+    }, [buttonCommand, ros, teleopEnabled, twist]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -93,9 +118,11 @@ export default function ManualControls({ ros }: Props) {
                 </div>
                 <button
                     className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${teleopEnabled ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    disabled={!connected}
                     onClick={() => {
                         setTeleopEnabled((value) => !value);
                         setPressed({});
+                        setButtonCommand(null);
                         stop();
                     }}
                     type="button"
@@ -104,15 +131,21 @@ export default function ManualControls({ ros }: Props) {
                 </button>
             </div>
 
+            {!connected && (
+                <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                    Manual control unavailable: rosbridge is disconnected.
+                </p>
+            )}
+
             <div className="mt-4 grid grid-cols-3 gap-2">
                 <div />
-                <DriveButton label="Forward" onPress={() => sendTwist(speed, 0)} onRelease={stop} />
+                <DriveButton disabled={!connected} label="Forward" onPress={() => startButtonCommand(speed, 0)} onRelease={stopButtonCommand} />
                 <div />
-                <DriveButton label="Left" onPress={() => sendTwist(0, turnSpeed)} onRelease={stop} />
-                <DriveButton label="Stop" onPress={stop} onRelease={stop} tone="danger" />
-                <DriveButton label="Right" onPress={() => sendTwist(0, -turnSpeed)} onRelease={stop} />
+                <DriveButton disabled={!connected} label="Left" onPress={() => startButtonCommand(0, turnSpeed)} onRelease={stopButtonCommand} />
+                <DriveButton disabled={!connected} label="Stop" onPress={stopButtonCommand} onRelease={stopButtonCommand} tone="danger" />
+                <DriveButton disabled={!connected} label="Right" onPress={() => startButtonCommand(0, -turnSpeed)} onRelease={stopButtonCommand} />
                 <div />
-                <DriveButton label="Back" onPress={() => sendTwist(-speed, 0)} onRelease={stop} />
+                <DriveButton disabled={!connected} label="Back" onPress={() => startButtonCommand(-speed, 0)} onRelease={stopButtonCommand} />
                 <div />
             </div>
 
@@ -140,17 +173,21 @@ export default function ManualControls({ ros }: Props) {
                     value={turnSpeed}
                 />
             </label>
-            <p className="mt-3 text-xs text-gray-500">Keyboard: W/A/S/D or arrows, space to stop, escape to exit.</p>
+            <p className="mt-3 text-xs text-gray-500">
+                Keyboard: W/A/S/D or arrows, space to stop, escape to exit. A sent command confirms rosbridge delivery only, not wheel motion.
+            </p>
         </section>
     );
 }
 
 function DriveButton({
+    disabled,
     label,
     onPress,
     onRelease,
     tone = 'default',
 }: {
+    disabled: boolean;
     label: string;
     onPress: () => void;
     onRelease: () => void;
@@ -158,15 +195,14 @@ function DriveButton({
 }) {
     return (
         <button
-            className={`min-h-12 rounded-lg px-3 py-2 text-sm font-semibold transition ${tone === 'danger' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
-            onMouseDown={onPress}
-            onMouseLeave={onRelease}
-            onMouseUp={onRelease}
-            onTouchEnd={onRelease}
-            onTouchStart={(event) => {
-                event.preventDefault();
+            className={`min-h-12 touch-none select-none rounded-lg px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${tone === 'danger' ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'bg-gray-100 text-gray-800 hover:bg-gray-200'}`}
+            disabled={disabled}
+            onPointerCancel={onRelease}
+            onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId);
                 onPress();
             }}
+            onPointerUp={onRelease}
             type="button"
         >
             {label}

@@ -26,7 +26,7 @@ RobotLayout (persistant)
 | Overview | `admin.robot.overview` (`/admin/robot`) | Lecture seule : santé, caméra, carte, bras |
 | Navigation | `admin.robot.navigation` | Carte cliquable, waypoints, actions Nav2 |
 | Teleop | `admin.robot.teleop` | Contrôle manuel `/cmd_vel` |
-| Arm | `admin.robot.arm` | Contrôle bras `/arm6_joints` + état |
+| Arm | `admin.robot.arm` | Commande `/evo/arm/command` relayée vers `/arm6_joints` + état |
 | Diagnostics | `admin.robot.diagnostics` | Capteurs, diagnostics, logs |
 | Connection | `admin.robot.connection` | Config IP/ports/caméra |
 

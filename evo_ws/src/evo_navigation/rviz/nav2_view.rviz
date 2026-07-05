@@ -90,7 +90,7 @@ Visualization Manager:
         Value: /initialpose
     - Class: rviz_default_plugins/SetGoal
       Topic:
-        Value: /goal_pose
+        Value: /evo/navigation/goal_request
     - Class: rviz_default_plugins/Measure
   Views:
     Current:

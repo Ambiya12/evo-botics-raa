@@ -8,7 +8,9 @@ Prerequisites: Yahboom bringup must already be running. The bringup provides:
 
 This launch file starts:
   - slam_toolbox in online_async mode (consumes /scan_multi)
-  - cmd_vel_safety_gate for browser teleop (/cmd_vel_teleop -> /cmd_vel)
+  - cmd_vel_safety_gate for browser teleop (/cmd_vel_teleop -> /cmd_vel_selected)
+  - optional collision_monitor (/cmd_vel_selected -> /cmd_vel_safe)
+  - cmd_vel_output_relay as the only /cmd_vel publisher
   - rviz2 (optional)
 
 NOTE: We do NOT launch robot_state_publisher or any scan merger here because
@@ -22,7 +24,7 @@ Usage:
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -32,10 +34,21 @@ def generate_launch_description():
 
     rviz_path = PathJoinSubstitution([nav_share, "rviz", "nav2_view.rviz"])
     slam_params = PathJoinSubstitution([nav_share, "config", "slam_toolbox_params.yaml"])
+    nav2_params = PathJoinSubstitution([nav_share, "config", "nav2_params.yaml"])
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    use_collision_monitor = LaunchConfiguration("use_collision_monitor")
+    relay_input_topic = PythonExpression([
+        "'/cmd_vel_safe' if '", use_collision_monitor,
+        "'.lower() == 'true' else '/cmd_vel_selected'",
+    ])
 
     return LaunchDescription([
         DeclareLaunchArgument("rviz", default_value="true"),
         DeclareLaunchArgument("use_sim_time", default_value="false"),
+        # A stop polygon blocks every Twist direction when occupied, including
+        # the reverse command needed to back away. Keep it opt-in for manual
+        # mapping until its scan geometry is validated on the physical robot.
+        DeclareLaunchArgument("use_collision_monitor", default_value="false"),
 
         # --- SLAM Toolbox ---
         Node(
@@ -44,7 +57,7 @@ def generate_launch_description():
             name="slam_toolbox",
             parameters=[
                 slam_params,
-                {"use_sim_time": LaunchConfiguration("use_sim_time")},
+                {"use_sim_time": use_sim_time},
             ],
             output="screen",
         ),
@@ -54,7 +67,48 @@ def generate_launch_description():
             package="evo_navigation",
             executable="cmd_vel_safety_gate",
             name="cmd_vel_safety_gate",
-            parameters=[{"use_sim_time": LaunchConfiguration("use_sim_time")}],
+            parameters=[{
+                "use_sim_time": use_sim_time,
+                "nav_cmd_topic": "/cmd_vel_nav",
+                "teleop_cmd_topic": "/cmd_vel_teleop",
+                "output_cmd_topic": "/cmd_vel_selected",
+            }],
+            output="screen",
+        ),
+        Node(
+            package="nav2_collision_monitor",
+            executable="collision_monitor",
+            name="collision_monitor",
+            parameters=[nav2_params, {
+                "use_sim_time": use_sim_time,
+                "polygons": ["FrontStop"],
+            }],
+            condition=IfCondition(use_collision_monitor),
+            output="screen",
+        ),
+        Node(
+            package="nav2_lifecycle_manager",
+            executable="lifecycle_manager",
+            name="lifecycle_manager_safety",
+            parameters=[{
+                "use_sim_time": use_sim_time,
+                "autostart": True,
+                "node_names": ["collision_monitor"],
+                "bond_timeout": 4.0,
+            }],
+            condition=IfCondition(use_collision_monitor),
+            output="screen",
+        ),
+        Node(
+            package="evo_navigation",
+            executable="cmd_vel_output_relay",
+            name="cmd_vel_output_relay",
+            parameters=[{
+                "use_sim_time": use_sim_time,
+                "input_cmd_topic": relay_input_topic,
+                "fallback_cmd_topic": "",
+                "output_cmd_topic": "/cmd_vel",
+            }],
             output="screen",
         ),
 
