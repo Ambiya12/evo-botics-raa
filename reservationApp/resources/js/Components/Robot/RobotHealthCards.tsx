@@ -1,7 +1,9 @@
+import { useEffect, useState } from 'react';
 import type { BatteryState, RobotPose } from './types';
 
 type Props = {
     battery: BatteryState | null;
+    batteryLastSeenAt: number | null;
     diagnosticsLevel: number | null;
     mapSize: string;
     pose: RobotPose | null;
@@ -29,13 +31,36 @@ const batteryTone = (battery: BatteryState | null) => {
     return 'text-gray-900';
 };
 
-export default function RobotHealthCards({ battery, diagnosticsLevel, mapSize, pose }: Props) {
+const BATTERY_STALE_AFTER_MS = 10_000;
+
+export default function RobotHealthCards({
+    battery,
+    batteryLastSeenAt,
+    diagnosticsLevel,
+    mapSize,
+    pose,
+}: Props) {
+    const [now, setNow] = useState(Date.now());
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const batteryAgeSeconds = batteryLastSeenAt === null
+        ? null
+        : Math.max(0, Math.round((now - batteryLastSeenAt) / 1000));
+    const batteryIsStale = batteryLastSeenAt !== null
+        && now - batteryLastSeenAt >= BATTERY_STALE_AFTER_MS;
+
     const cards = [
         {
             label: 'Battery',
-            value: battery?.displayValue ?? 'Waiting',
-            detail: battery?.estimateLabel,
-            tone: batteryTone(battery),
+            value: batteryIsStale ? 'Stale' : battery?.displayValue ?? 'Waiting',
+            detail: batteryIsStale
+                ? `Last message ${batteryAgeSeconds}s ago`
+                : battery?.estimateLabel,
+            tone: batteryIsStale ? 'text-red-700' : batteryTone(battery),
         },
         {
             label: 'Position',

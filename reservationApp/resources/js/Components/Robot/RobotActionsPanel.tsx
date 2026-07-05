@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { RobotPose, RosApi } from './types';
 
 type Props = {
+    navigationActionName: string;
     pose: RobotPose | null;
     ros: RosApi;
 };
@@ -13,17 +14,24 @@ const quaternionFromYaw = (yaw: number) => ({
     w: Math.cos(yaw / 2),
 });
 
-export default function RobotActionsPanel({ pose, ros }: Props) {
+export default function RobotActionsPanel({ navigationActionName, pose, ros }: Props) {
     const [speedLimit, setSpeedLimit] = useState(0.28);
     const [initialPose, setInitialPose] = useState({ x: '0', y: '0', yawDeg: '0' });
 
     const sendInitialPose = () => {
-        const yaw = (Number(initialPose.yawDeg) * Math.PI) / 180;
+        const x = Number(initialPose.x);
+        const y = Number(initialPose.y);
+        const yawDeg = Number(initialPose.yawDeg);
+        if (![x, y, yawDeg].every(Number.isFinite)) {
+            ros.addLog('Initial pose rejected: X, Y, and yaw must be finite numbers.', 'error');
+            return;
+        }
+        const yaw = (yawDeg * Math.PI) / 180;
         ros.publish('/initialpose', 'geometry_msgs/msg/PoseWithCovarianceStamped', {
             header: { frame_id: 'map' },
             pose: {
                 pose: {
-                    position: { x: Number(initialPose.x), y: Number(initialPose.y), z: 0 },
+                    position: { x, y, z: 0 },
                     orientation: quaternionFromYaw(yaw),
                 },
                 covariance: [
@@ -36,7 +44,7 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
                 ],
             },
         });
-        ros.addLog(`Initial pose set to ${initialPose.x}, ${initialPose.y}, ${initialPose.yawDeg} deg`, 'ok');
+        ros.addLog(`Initial pose set to ${x}, ${y}, ${yawDeg} deg`, 'ok');
     };
 
     const useCurrentPose = () => {
@@ -50,7 +58,7 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
 
     const cancelNavigation = () => {
         ros.publish('/explore/resume', 'std_msgs/msg/Bool', { data: false });
-        ros.callService('/navigate_to_pose/_action/cancel_goal', {
+        ros.callService(`${navigationActionName.replace(/\/$/, '')}/_action/cancel_goal`, {
             type: 'action_msgs/srv/CancelGoal',
             args: {
                 goal_info: {
@@ -59,7 +67,7 @@ export default function RobotActionsPanel({ pose, ros }: Props) {
                 },
             },
         });
-        ros.publish('/cmd_vel_nav', 'geometry_msgs/msg/Twist', {
+        ros.publish('/cmd_vel_nav_raw', 'geometry_msgs/msg/Twist', {
             linear: { x: 0, y: 0, z: 0 },
             angular: { x: 0, y: 0, z: 0 },
         });

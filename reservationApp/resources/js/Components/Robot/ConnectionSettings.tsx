@@ -30,6 +30,23 @@ export default function ConnectionSettings() {
                     </label>
                 ))}
 
+                {([
+                    ['goalRequestTopic', 'Goal request topic'],
+                    ['goalStatusTopic', 'Goal status topic'],
+                    ['navigationActionName', 'Nav2 action name'],
+                    ['goalFrame', 'Goal frame'],
+                ] as const).map(([key, label]) => (
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500" key={key}>
+                        {label}
+                        <input
+                            className="mt-2 w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                            onChange={(event) => setConfig(key, event.target.value)}
+                            type="text"
+                            value={config[key]}
+                        />
+                    </label>
+                ))}
+
                 <label className="block text-xs font-semibold uppercase tracking-wide text-gray-500 md:col-span-2">
                     Save map path
                     <div className="mt-2 flex gap-2">

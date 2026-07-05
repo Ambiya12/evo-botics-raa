@@ -2,6 +2,7 @@ import {
     createContext,
     useCallback,
     useContext,
+    useEffect,
     useMemo,
     useState,
     type ReactNode,
@@ -15,21 +16,41 @@ import {
     useRobotTelemetry,
     type RobotTelemetry,
 } from "@/hooks/useRobotTelemetry";
-import { quaternionFromYaw } from "@/Components/Robot/transforms";
+import {
+    hasOccupancyClearance,
+    occupancyAtWorld,
+    quaternionFromYaw,
+} from "@/Components/Robot/transforms";
 import type { RosApi, Waypoint } from "@/Components/Robot/types";
 
-const DEFAULT_WAYPOINTS: Waypoint[] = [
-    { id: "reception", name: "Reception", x: 0, y: 0, yaw: 0 },
-    { id: "room-a", name: "Meeting Room A", x: 1.5, y: 0.5, yaw: 0 },
-    { id: "room-b", name: "Meeting Room B", x: 2.2, y: -0.8, yaw: 0 },
-];
+const DEFAULT_WAYPOINTS: Waypoint[] = [];
 
-type RobotConfig = {
+const ROBOT_CONFIG_STORAGE_KEY = "robot.connection.config";
+const ROBOT_WAYPOINTS_STORAGE_KEY = "robot.navigation.waypoints";
+const MAX_SAVED_WAYPOINTS = 3;
+
+const DEFAULT_CONFIG: RobotConfig = {
+    robotHost: "",
+    rosPort: "9090",
+    cameraPort: "8080",
+    cameraPath: "/camera/stream",
+    mapSavePath: "/root/maps/new_map",
+    goalRequestTopic: "/evo/navigation/goal_request",
+    goalStatusTopic: "/evo/navigation/goal_status",
+    navigationActionName: "/navigate_to_pose",
+    goalFrame: "map",
+};
+
+export type RobotConfig = {
     robotHost: string;
     rosPort: string;
     cameraPort: string;
     cameraPath: string;
     mapSavePath: string;
+    goalRequestTopic: string;
+    goalStatusTopic: string;
+    navigationActionName: string;
+    goalFrame: string;
 };
 
 type RobotContextValue = {
@@ -48,20 +69,76 @@ type RobotContextValue = {
     telemetry: RobotTelemetry;
     waypoints: Waypoint[];
     addCurrentPoseWaypoint: () => void;
+    removeWaypoint: (id: string) => void;
+    renameWaypoint: (id: string, name: string) => void;
     sendGoal: (x: number, y: number, yaw?: number) => void;
     saveMap: () => void;
 };
 
 const RobotContext = createContext<RobotContextValue | null>(null);
 
+const normalizeHost = (value: string) => (
+    value
+        .trim()
+        .replace(/^[a-z]+:\/\//i, "")
+        .replace(/\/.*$/, "")
+);
+
+const isValidPort = (value: string) => {
+    const port = Number(value.trim());
+    return Number.isInteger(port) && port > 0 && port <= 65535;
+};
+
+const loadStoredConfig = (): RobotConfig => {
+    if (typeof window === "undefined") {
+        return DEFAULT_CONFIG;
+    }
+
+    try {
+        const stored = window.localStorage.getItem(ROBOT_CONFIG_STORAGE_KEY);
+        if (!stored) {
+            return DEFAULT_CONFIG;
+        }
+
+        return { ...DEFAULT_CONFIG, ...JSON.parse(stored) };
+    } catch {
+        return DEFAULT_CONFIG;
+    }
+};
+
+const loadStoredWaypoints = (): Waypoint[] => {
+    if (typeof window === "undefined") {
+        return DEFAULT_WAYPOINTS;
+    }
+
+    try {
+        const stored = window.localStorage.getItem(ROBOT_WAYPOINTS_STORAGE_KEY);
+        if (!stored) {
+            return DEFAULT_WAYPOINTS;
+        }
+
+        const parsed = JSON.parse(stored);
+        if (!Array.isArray(parsed)) {
+            return DEFAULT_WAYPOINTS;
+        }
+
+        return parsed
+            .filter((waypoint): waypoint is Waypoint => (
+                waypoint
+                && typeof waypoint.id === "string"
+                && typeof waypoint.name === "string"
+                && Number.isFinite(waypoint.x)
+                && Number.isFinite(waypoint.y)
+                && Number.isFinite(waypoint.yaw)
+            ))
+            .slice(0, MAX_SAVED_WAYPOINTS);
+    } catch {
+        return DEFAULT_WAYPOINTS;
+    }
+};
+
 export function RobotProvider({ children }: { children: ReactNode }) {
-    const [config, setConfigState] = useState<RobotConfig>({
-        robotHost: "10.10.220.251",
-        rosPort: "9090",
-        cameraPort: "8080",
-        cameraPath: "/camera/stream",
-        mapSavePath: "/root/maps/admin_map",
-    });
+    const [config, setConfigState] = useState<RobotConfig>(loadStoredConfig);
 
     const setConfig = useCallback(
         <K extends keyof RobotConfig>(key: K, value: RobotConfig[K]) => {
@@ -70,18 +147,42 @@ export function RobotProvider({ children }: { children: ReactNode }) {
         [],
     );
 
-    const rosUrl = useMemo(
-        () => `ws://${config.robotHost}:${config.rosPort}`,
-        [config.robotHost, config.rosPort],
+    useEffect(() => {
+        try {
+            window.localStorage.setItem(
+                ROBOT_CONFIG_STORAGE_KEY,
+                JSON.stringify(config),
+            );
+        } catch {
+            // Storage is only a convenience; connection controls should still work.
+        }
+    }, [config]);
+
+    const normalizedHost = useMemo(
+        () => normalizeHost(config.robotHost),
+        [config.robotHost],
     );
+
+    const rosUrl = useMemo(() => {
+        if (!normalizedHost || !isValidPort(config.rosPort)) {
+            return "";
+        }
+
+        return `ws://${normalizedHost}:${config.rosPort.trim()}`;
+    }, [config.rosPort, normalizedHost]);
+
     const cameraUrl = useMemo(() => {
+        if (!normalizedHost || !isValidPort(config.cameraPort)) {
+            return "";
+        }
+
         const normalizedPath = config.cameraPath.startsWith("/")
             ? config.cameraPath
             : `/${config.cameraPath}`;
-        return `http://${config.robotHost}:${config.cameraPort}${normalizedPath}`;
-    }, [config.cameraPath, config.cameraPort, config.robotHost]);
+        return `http://${normalizedHost}:${config.cameraPort.trim()}${normalizedPath}`;
+    }, [config.cameraPath, config.cameraPort, normalizedHost]);
 
-    const rosBridge = useRosBridge(rosUrl);
+    const rosBridge = useRosBridge(rosUrl, Boolean(rosUrl));
 
     const ros: RosApi = useMemo(
         () => ({
@@ -99,23 +200,110 @@ export function RobotProvider({ children }: { children: ReactNode }) {
     );
 
     const telemetry = useRobotTelemetry(ros);
-    const [waypoints, setWaypoints] = useState<Waypoint[]>(DEFAULT_WAYPOINTS);
+    const [waypoints, setWaypoints] = useState<Waypoint[]>(loadStoredWaypoints);
+
+    useEffect(() => {
+        try {
+            window.localStorage.setItem(
+                ROBOT_WAYPOINTS_STORAGE_KEY,
+                JSON.stringify(waypoints),
+            );
+        } catch {
+            // Waypoint persistence is a dashboard convenience; ROS remains authoritative.
+        }
+    }, [waypoints]);
+
+    useEffect(() => ros.subscribe(config.goalStatusTopic, (message) => {
+        const code = typeof message === "object" && message !== null && "data" in message
+            ? String((message as { data?: unknown }).data ?? "")
+            : "";
+        if (!code) return;
+
+        const level = code === "succeeded"
+            ? "ok"
+            : code === "planning" || code === "accepted" || code === "active"
+                ? "info"
+                : code === "cancelled"
+                    ? "warn"
+                    : "error";
+        ros.addLog(`Navigation status: ${code}`, level);
+        console.info("[navigation] ROS goal status", { topic: config.goalStatusTopic, code });
+    }, {
+        type: "std_msgs/msg/String",
+    }), [config.goalStatusTopic, ros]);
 
     const sendGoal = useCallback(
-        (x: number, y: number, yaw = 0) => {
-            ros.publish("/goal_pose", "geometry_msgs/msg/PoseStamped", {
-                header: { frame_id: "map" },
+        (x: number, y: number, yaw?: number) => {
+            if (!telemetry.pose) {
+                ros.addLog(
+                    "Navigation goal rejected by dashboard: set and verify the AMCL pose first.",
+                    "error",
+                );
+                return;
+            }
+            const { costmap } = telemetry;
+            if (costmap) {
+                const robotCost = occupancyAtWorld(
+                    costmap,
+                    telemetry.pose.x,
+                    telemetry.pose.y,
+                );
+                if (robotCost === null || robotCost < 0 || robotCost >= 95) {
+                    ros.addLog(
+                        "Navigation goal rejected by dashboard: the current AMCL pose overlaps an occupied or unknown costmap cell. Correct the initial pose.",
+                        "error",
+                    );
+                    return;
+                }
+                if (!hasOccupancyClearance(costmap, x, y, 0.25, 95)) {
+                    ros.addLog(
+                        "Navigation goal rejected by dashboard: choose a point in the center of a clear corridor, away from live obstacles and inflated walls.",
+                        "error",
+                    );
+                    return;
+                }
+            } else {
+                // The browser's costmap is advisory telemetry delivered through
+                // rosbridge. Do not make it a second mandatory safety gate:
+                // navigation_goal_validator owns the authoritative ROS-side
+                // map, costmap, clearance, path, and E-stop checks.
+                ros.addLog(
+                    "Live costmap is not yet visible in the dashboard; forwarding the request to the robot safety validator.",
+                    "warn",
+                );
+            }
+            const goalYaw = yaw ?? Math.atan2(
+                y - telemetry.pose.y,
+                x - telemetry.pose.x,
+            );
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(goalYaw)) {
+                ros.addLog("Navigation goal rejected by dashboard: coordinates are not finite.", "error");
+                return;
+            }
+            const payload = {
+                header: { frame_id: config.goalFrame },
                 pose: {
                     position: { x, y, z: 0 },
-                    orientation: quaternionFromYaw(yaw),
+                    orientation: quaternionFromYaw(goalYaw),
                 },
+            };
+            console.info("[navigation] Publishing goal request", {
+                topic: config.goalRequestTopic,
+                payload,
             });
+            const sent = ros.publish(
+                config.goalRequestTopic,
+                "geometry_msgs/msg/PoseStamped",
+                payload,
+            );
             ros.addLog(
-                `Navigation goal sent to ${x.toFixed(2)}, ${y.toFixed(2)}`,
-                "ok",
+                sent
+                    ? `Navigation goal requested at ${x.toFixed(2)}, ${y.toFixed(2)} in ${config.goalFrame}`
+                    : `Navigation goal could not be sent at ${x.toFixed(2)}, ${y.toFixed(2)}`,
+                sent ? "ok" : "error",
             );
         },
-        [ros],
+        [config.goalFrame, config.goalRequestTopic, ros, telemetry.costmap, telemetry.pose],
     );
 
     const saveMap = useCallback(() => {
@@ -129,21 +317,54 @@ export function RobotProvider({ children }: { children: ReactNode }) {
     const addCurrentPoseWaypoint = useCallback(() => {
         const { pose } = telemetry;
         if (!pose) return;
-        setWaypoints((current) => [
-            ...current,
-            {
-                id: `waypoint-${Date.now()}`,
-                name: `Waypoint ${current.length + 1}`,
-                x: pose.x,
-                y: pose.y,
-                yaw: pose.yaw,
-            },
-        ]);
+        if (waypoints.length >= MAX_SAVED_WAYPOINTS) {
+            ros.addLog(
+                `Only ${MAX_SAVED_WAYPOINTS} dashboard waypoints can be saved. Remove one before saving another.`,
+                "warn",
+            );
+            return;
+        }
+
+        const usedNumbers = new Set(
+            waypoints
+                .map((waypoint) => waypoint.name.match(/^Waypoint ([1-3])$/)?.[1])
+                .filter(Boolean)
+                .map(Number),
+        );
+        const availableNumber = [1, 2, 3].find((number) => !usedNumbers.has(number))
+            ?? waypoints.length + 1;
+        const waypoint: Waypoint = {
+            id: `waypoint-${Date.now()}`,
+            name: `Waypoint ${availableNumber}`,
+            x: pose.x,
+            y: pose.y,
+            yaw: pose.yaw,
+        };
+        setWaypoints((current) => [...current, waypoint]);
         ros.addLog(
-            `Saved waypoint from current pose: ${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}`,
+            `Saved ${waypoint.name} from current pose: ${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}`,
             "ok",
         );
-    }, [ros, telemetry]);
+    }, [ros, telemetry, waypoints]);
+
+    const removeWaypoint = useCallback((id: string) => {
+        const waypoint = waypoints.find((item) => item.id === id);
+        if (!waypoint) return;
+        setWaypoints((current) => current.filter((item) => item.id !== id));
+        ros.addLog(`Removed waypoint: ${waypoint.name}`, "info");
+    }, [ros, waypoints]);
+
+    const renameWaypoint = useCallback((id: string, name: string) => {
+        const trimmedName = name.trim();
+        if (!trimmedName) {
+            ros.addLog("Waypoint name cannot be empty.", "warn");
+            return;
+        }
+        setWaypoints((current) => current.map((waypoint) => (
+            waypoint.id === id ? { ...waypoint, name: trimmedName } : waypoint
+        )));
+        ros.addLog(`Renamed waypoint to: ${trimmedName}`, "ok");
+    }, [ros]);
 
     const value = useMemo<RobotContextValue>(
         () => ({
@@ -159,6 +380,8 @@ export function RobotProvider({ children }: { children: ReactNode }) {
             telemetry,
             waypoints,
             addCurrentPoseWaypoint,
+            removeWaypoint,
+            renameWaypoint,
             sendGoal,
             saveMap,
         }),
@@ -175,6 +398,8 @@ export function RobotProvider({ children }: { children: ReactNode }) {
             telemetry,
             waypoints,
             addCurrentPoseWaypoint,
+            removeWaypoint,
+            renameWaypoint,
             sendGoal,
             saveMap,
         ],

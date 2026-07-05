@@ -1,20 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RosApi } from '@/Components/Robot/types';
+import { useEffect, useMemo, useState } from 'react';
 
 type Props = {
     cameraUrl: string;
-    ros: Pick<RosApi, 'subscribe'>;
 };
 
-type RosImageMessage = {
-    data?: number[] | string;
-    encoding?: string;
-    height?: number;
-    step?: number;
-    width?: number;
+type CameraStatus = {
+    available?: boolean;
+    error?: string | null;
+    last_encoding?: string | null;
+    opencv_available?: boolean;
+    received_frames?: number;
+    topic?: string;
 };
-
-const CAMERA_TOPIC = '/camera/color/image_raw';
 
 const urlWithCacheBuster = (url: string, value: number) => (
     `${url}${url.includes('?') ? '&' : '?'}t=${value}`
@@ -31,99 +28,16 @@ const snapshotUrlFromStream = (url: string) => {
     }
 };
 
-const bytesFromRosData = (data: RosImageMessage['data']) => {
-    if (Array.isArray(data)) {
-        return Uint8Array.from(data);
-    }
+const statusUrlFromStream = (url: string) => (
+    snapshotUrlFromStream(url).replace(/\/camera\/snapshot$/, '/camera/status')
+);
 
-    if (typeof data === 'string') {
-        try {
-            const binary = window.atob(data);
-            const bytes = new Uint8Array(binary.length);
-            for (let index = 0; index < binary.length; index += 1) {
-                bytes[index] = binary.charCodeAt(index);
-            }
-            return bytes;
-        } catch {
-            return null;
-        }
-    }
-
-    return null;
-};
-
-const drawRosImage = (canvas: HTMLCanvasElement, message: RosImageMessage) => {
-    const width = Number(message.width);
-    const height = Number(message.height);
-    const encoding = String(message.encoding ?? '').toLowerCase();
-    const step = Number(message.step || 0);
-    const bytes = bytesFromRosData(message.data);
-
-    if (!width || !height || !bytes) {
-        return false;
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-        return false;
-    }
-
-    canvas.width = width;
-    canvas.height = height;
-
-    const image = ctx.createImageData(width, height);
-    const rgba = image.data;
-    const rowStride = step || width * (encoding === 'rgba8' || encoding === 'bgra8' ? 4 : 3);
-
-    if (encoding === 'rgb8' || encoding === 'bgr8') {
-        for (let y = 0; y < height; y += 1) {
-            for (let x = 0; x < width; x += 1) {
-                const source = y * rowStride + x * 3;
-                const target = (y * width + x) * 4;
-                rgba[target] = encoding === 'rgb8' ? bytes[source] : bytes[source + 2];
-                rgba[target + 1] = bytes[source + 1];
-                rgba[target + 2] = encoding === 'rgb8' ? bytes[source + 2] : bytes[source];
-                rgba[target + 3] = 255;
-            }
-        }
-    } else if (encoding === 'rgba8' || encoding === 'bgra8') {
-        for (let y = 0; y < height; y += 1) {
-            for (let x = 0; x < width; x += 1) {
-                const source = y * rowStride + x * 4;
-                const target = (y * width + x) * 4;
-                rgba[target] = encoding === 'rgba8' ? bytes[source] : bytes[source + 2];
-                rgba[target + 1] = bytes[source + 1];
-                rgba[target + 2] = encoding === 'rgba8' ? bytes[source + 2] : bytes[source];
-                rgba[target + 3] = bytes[source + 3] ?? 255;
-            }
-        }
-    } else if (encoding === 'mono8' || encoding === '8uc1') {
-        const monoStride = step || width;
-        for (let y = 0; y < height; y += 1) {
-            for (let x = 0; x < width; x += 1) {
-                const value = bytes[y * monoStride + x];
-                const target = (y * width + x) * 4;
-                rgba[target] = value;
-                rgba[target + 1] = value;
-                rgba[target + 2] = value;
-                rgba[target + 3] = 255;
-            }
-        }
-    } else {
-        return false;
-    }
-
-    ctx.putImageData(image, 0, 0);
-    return true;
-};
-
-export default function CameraPanel({ cameraUrl, ros }: Props) {
+export default function CameraPanel({ cameraUrl }: Props) {
     const [failed, setFailed] = useState(false);
     const [reloadKey, setReloadKey] = useState(0);
     const [snapshotReady, setSnapshotReady] = useState(false);
-    const [rosFrameReady, setRosFrameReady] = useState(false);
     const [snapshotKey, setSnapshotKey] = useState(0);
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const [status, setStatus] = useState<CameraStatus | null>(null);
     const streamUrl = cameraUrl ? urlWithCacheBuster(cameraUrl, reloadKey) : '';
     const snapshotUrl = useMemo(() => (
         cameraUrl ? urlWithCacheBuster(snapshotUrlFromStream(cameraUrl), snapshotKey) : ''
@@ -132,34 +46,37 @@ export default function CameraPanel({ cameraUrl, ros }: Props) {
     useEffect(() => {
         setFailed(false);
         setSnapshotReady(false);
-        setRosFrameReady(false);
+        setStatus(null);
     }, [cameraUrl, reloadKey]);
 
     useEffect(() => {
         if (!failed) return undefined;
 
-        const interval = window.setInterval(() => setSnapshotKey(Date.now()), 300);
-        return () => window.clearInterval(interval);
-    }, [failed]);
-
-    useEffect(() => {
-        if (!failed) return undefined;
-
-        return ros.subscribe(CAMERA_TOPIC, (message) => {
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-
-            const drawn = drawRosImage(canvas, message as RosImageMessage);
-            if (drawn) {
-                setRosFrameReady(true);
+        let cancelled = false;
+        const poll = async () => {
+            setSnapshotKey(Date.now());
+            try {
+                const response = await fetch(urlWithCacheBuster(statusUrlFromStream(cameraUrl), Date.now()), {
+                    cache: 'no-store',
+                });
+                if (response.ok && !cancelled) {
+                    setStatus(await response.json() as CameraStatus);
+                }
+            } catch {
+                if (!cancelled) setStatus(null);
             }
-        }, { type: 'sensor_msgs/msg/Image', throttleRate: 250 });
-    }, [failed, ros]);
+        };
+        void poll();
+        const interval = window.setInterval(poll, 1000);
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+        };
+    }, [cameraUrl, failed]);
 
     const reload = () => {
         setFailed(false);
         setSnapshotReady(false);
-        setRosFrameReady(false);
         setReloadKey(Date.now());
         setSnapshotKey(Date.now());
     };
@@ -192,24 +109,27 @@ export default function CameraPanel({ cameraUrl, ros }: Props) {
                             <>
                                 <img
                                     alt="Robot camera snapshot"
-                                    className={`h-full w-full object-contain ${rosFrameReady ? 'hidden' : ''}`}
-                                    onLoad={() => {
-                                        setSnapshotReady(true);
-                                        setRosFrameReady(false);
-                                    }}
+                                    className="h-full w-full object-contain"
+                                    onLoad={() => setSnapshotReady(true)}
                                     src={snapshotUrl}
                                 />
-                                <canvas
-                                    aria-label="Robot camera ROS image"
-                                    className={`h-full w-full object-contain ${rosFrameReady ? '' : 'hidden'}`}
-                                    ref={canvasRef}
-                                />
-                                {!snapshotReady && !rosFrameReady && (
+                                {!snapshotReady && (
                                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-950/90 px-6 text-center">
                                         <p className="text-sm font-semibold text-white">Camera stream unavailable</p>
                                         <p className="mt-2 text-xs leading-5 text-gray-400">
-                                            Waiting for JPEG frames from the robot web server or raw images from {CAMERA_TOPIC}.
+                                            {status?.error
+                                                ? `Frame conversion failed: ${status.error}`
+                                                : status?.opencv_available === false
+                                                    ? 'OpenCV is missing in the robot runtime.'
+                                                    : status && Number(status.received_frames ?? 0) === 0
+                                                        ? `No images received on ${status.topic ?? 'the configured camera topic'}.`
+                                                        : 'Waiting for JPEG frames from the robot camera server.'}
                                         </p>
+                                        {status?.last_encoding && (
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                ROS encoding: {status.last_encoding}
+                                            </p>
+                                        )}
                                     </div>
                                 )}
                             </>

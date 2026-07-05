@@ -1,4 +1,4 @@
-import type { ArmJoints, BatteryState, DiagnosticStatus, RobotPose } from './types';
+import type { ArmJoints, BatteryState, DiagnosticStatus, OccupancyGrid, RobotPose } from './types';
 
 export const normalizeBattery = (raw: number): BatteryState => {
     const updatedAt = new Date().toLocaleTimeString();
@@ -85,6 +85,61 @@ export const quaternionFromYaw = (yaw: number) => ({
     z: Math.sin(yaw / 2),
     w: Math.cos(yaw / 2),
 });
+
+export const occupancyAtWorld = (
+    grid: OccupancyGrid,
+    worldX: number,
+    worldY: number,
+): number | null => {
+    const origin = grid.info.origin;
+    const yaw = yawFromQuaternion(origin.orientation ?? {});
+    const dx = worldX - origin.position.x;
+    const dy = worldY - origin.position.y;
+    const localX = Math.cos(yaw) * dx + Math.sin(yaw) * dy;
+    const localY = -Math.sin(yaw) * dx + Math.cos(yaw) * dy;
+    const cellX = Math.floor(localX / grid.info.resolution);
+    const cellY = Math.floor(localY / grid.info.resolution);
+
+    if (
+        cellX < 0
+        || cellY < 0
+        || cellX >= grid.info.width
+        || cellY >= grid.info.height
+    ) {
+        return null;
+    }
+
+    return Number(grid.data[cellY * grid.info.width + cellX] ?? -1);
+};
+
+export const hasOccupancyClearance = (
+    grid: OccupancyGrid,
+    worldX: number,
+    worldY: number,
+    clearanceMeters: number,
+    occupiedThreshold: number,
+): boolean => {
+    const radiusCells = Math.ceil(clearanceMeters / grid.info.resolution);
+    const yaw = yawFromQuaternion(grid.info.origin.orientation ?? {});
+
+    for (let cellY = -radiusCells; cellY <= radiusCells; cellY += 1) {
+        for (let cellX = -radiusCells; cellX <= radiusCells; cellX += 1) {
+            if (Math.hypot(cellX, cellY) > radiusCells) continue;
+            const localX = cellX * grid.info.resolution;
+            const localY = cellY * grid.info.resolution;
+            const value = occupancyAtWorld(
+                grid,
+                worldX + Math.cos(yaw) * localX - Math.sin(yaw) * localY,
+                worldY + Math.sin(yaw) * localX + Math.cos(yaw) * localY,
+            );
+            if (value === null || value < 0 || value >= occupiedThreshold) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+};
 
 export const armFromArmMessage = (message: any): ArmJoints | null => {
     if (!message) return null;

@@ -10,8 +10,9 @@ import { useTranslation } from '@/hooks/useTranslation';
 
 const Overview: LayoutComponent = () => {
     const { t } = useTranslation();
-    const { cameraUrl, ros, telemetry } = useRobotContext();
+    const { cameraUrl, telemetry } = useRobotContext();
     const rgb = telemetry.heartbeats.find((topic) => topic.key === 'rgb');
+    const batteryHeartbeat = telemetry.heartbeats.find((topic) => topic.key === 'battery');
     const cameraOnline = rgb?.lastSeenAt != null && Date.now() - rgb.lastSeenAt < 5000;
 
     return (
@@ -20,22 +21,23 @@ const Overview: LayoutComponent = () => {
 
             <RobotHealthCards
                 battery={telemetry.battery}
+                batteryLastSeenAt={batteryHeartbeat?.lastSeenAt ?? null}
                 diagnosticsLevel={telemetry.diagnosticsLevel}
                 mapSize={telemetry.mapSize}
                 pose={telemetry.pose}
             />
 
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-                <MapCanvas map={telemetry.map} path={telemetry.path} pose={telemetry.pose} />
+                <MapCanvas costmap={telemetry.costmap} map={telemetry.map} path={telemetry.path} pose={telemetry.pose} />
                 <div className="space-y-6">
                     <div className="space-y-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('Camera')}</span>
+                            <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('ROS camera topic')}</span>
                             <span className={`rounded-full px-2 py-1 text-xs font-semibold ring-1 ${cameraOnline ? 'bg-emerald-100 text-emerald-800 ring-emerald-200' : 'bg-gray-100 text-gray-700 ring-gray-200'}`}>
-                                {cameraOnline ? 'On' : 'Off'}
+                                {cameraOnline ? 'Topic live' : 'Topic offline'}
                             </span>
                         </div>
-                        <CameraPanel cameraUrl={cameraUrl} ros={ros} />
+                        <CameraPanel cameraUrl={cameraUrl} />
                     </div>
                     <ArmStateView joints={telemetry.armJoints} />
                 </div>

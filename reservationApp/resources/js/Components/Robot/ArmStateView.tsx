@@ -17,8 +17,8 @@ export default function ArmStateView({ joints }: Props) {
     return (
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
             <div>
-                <h3 className="text-sm font-semibold text-gray-900">Arm Position</h3>
-                <p className="text-xs text-gray-500">Live joint angles from /joint_states</p>
+                <h3 className="text-sm font-semibold text-gray-900">Arm Command Position</h3>
+                <p className="text-xs text-gray-500">Last command relayed to /arm6_joints; not servo feedback</p>
             </div>
 
             <div className="mt-4 space-y-3">
@@ -37,7 +37,7 @@ export default function ArmStateView({ joints }: Props) {
                         );
                     })
                 ) : (
-                    <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-500">Waiting for /joint_states</p>
+                    <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-500">Waiting for a relayed /arm6_joints command</p>
                 )}
             </div>
         </section>

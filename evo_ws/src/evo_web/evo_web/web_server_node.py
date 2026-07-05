@@ -10,7 +10,7 @@ Usage:
   ros2 run evo_web web_server_node
   ros2 run evo_web web_server_node --ros-args -p port:=8080
 """
-import io
+import json
 import time
 import threading
 from functools import partial
@@ -21,7 +21,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from sensor_msgs.msg import Image
-from std_msgs.msg import UInt8MultiArray, MultiArrayDimension, String
 
 try:
     import cv2
@@ -32,11 +31,11 @@ except ImportError:
 
 
 class CameraSnapshotHandler(SimpleHTTPRequestHandler):
-    """HTTP handler that serves static files + live camera JPEG + mic ingest."""
+    """HTTP handler that serves static files and live camera JPEGs."""
 
-    def __init__(self, *args, jpeg_getter=None, mic_sink=None, **kwargs):
+    def __init__(self, *args, camera_status_getter=None, jpeg_getter=None, **kwargs):
+        self.camera_status_getter = camera_status_getter
         self.jpeg_getter = jpeg_getter
-        self.mic_sink = mic_sink
         super().__init__(*args, **kwargs)
 
     def do_GET(self):
@@ -46,38 +45,16 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
             self.serve_snapshot()
         elif route == "/camera/stream":
             self.serve_mjpeg_stream()
+        elif route == "/camera/status":
+            self.serve_camera_status()
         else:
             super().do_GET()
 
-    def do_POST(self):
-        if self.path.startswith("/mic/chunk"):
-            self.handle_mic_chunk()
-        else:
-            self.send_error(404, "Not Found")
-
     def do_OPTIONS(self):
-        # CORS preflight for dashboards served from a different origin.
+        # CORS preflight for camera clients served from a different origin.
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Mic-Mime, X-Mic-Sample-Rate")
-        self.end_headers()
-
-    def handle_mic_chunk(self):
-        length = int(self.headers.get("Content-Length", "0") or 0)
-        if length <= 0 or length > 2_000_000:
-            self.send_error(400, "Missing or oversized body")
-            return
-        audio = self.rfile.read(length)
-        mime = self.headers.get("X-Mic-Mime", "audio/webm;codecs=opus")
-        rate = self.headers.get("X-Mic-Sample-Rate", "48000")
-        if self.mic_sink:
-            try:
-                self.mic_sink(audio, mime, rate)
-            except Exception:  # don't leak to client
-                pass
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
         self.end_headers()
 
     def serve_snapshot(self):
@@ -95,7 +72,30 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(jpeg)
 
+    def serve_camera_status(self):
+        status = self.camera_status_getter() if self.camera_status_getter else {}
+        payload = json.dumps(status).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+        self.wfile.write(payload)
+
     def serve_mjpeg_stream(self):
+        # Do not return a successful, permanently blank stream. Waiting briefly
+        # lets a warming camera connect; a 503 then activates the dashboard's
+        # status/snapshot fallback with a useful diagnosis.
+        deadline = time.monotonic() + 2.0
+        frame = self.jpeg_getter() if self.jpeg_getter else None
+        while frame is None and time.monotonic() < deadline:
+            time.sleep(0.05)
+            frame = self.jpeg_getter() if self.jpeg_getter else None
+        if frame is None:
+            self.send_error(503, "No camera frame available yet")
+            return
+
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
@@ -127,6 +127,12 @@ class CameraSnapshotHandler(SimpleHTTPRequestHandler):
         pass  # suppress per-request logs
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    """Allow immediate restart after the previous camera server exits."""
+
+    allow_reuse_address = True
+
+
 class WebServerNode(Node):
     def __init__(self):
         super().__init__("web_server_node")
@@ -142,12 +148,12 @@ class WebServerNode(Node):
         self.latest_jpeg_seq = 0
         self.jpeg_lock = threading.Lock()
         self.last_encode_time = 0.0
-
-        # Mic audio sink: publish each chunk as raw bytes on /evo/mic_chunks
-        # and a short meta String on /evo/mic_meta (mime + sample rate).
-        self.mic_chunks_pub = self.create_publisher(UInt8MultiArray, "/evo/mic_chunks", 20)
-        self.mic_meta_pub = self.create_publisher(String, "/evo/mic_meta", 5)
-        self._mic_chunk_count = 0
+        self.received_frame_count = 0
+        self.encoded_frame_count = 0
+        self.last_frame_time = None
+        self.last_frame_encoding = None
+        self.last_camera_error = None
+        self.last_error_log_time = 0.0
 
         if HAS_CV2:
             sensor_qos = QoSProfile(
@@ -173,10 +179,10 @@ class WebServerNode(Node):
         web_dir = str(Path(get_package_share_directory("evo_web")) / "web")
 
         handler = partial(CameraSnapshotHandler,
+                          camera_status_getter=self.get_camera_status,
                           jpeg_getter=self.get_jpeg,
-                          mic_sink=self.on_mic_chunk,
                           directory=web_dir)
-        self.httpd = ThreadingHTTPServer(("0.0.0.0", self.port), handler)
+        self.httpd = ReusableThreadingHTTPServer(("0.0.0.0", self.port), handler)
         self.httpd.daemon_threads = True
         self.http_thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
         self.http_thread.start()
@@ -184,43 +190,92 @@ class WebServerNode(Node):
 
     def on_image(self, msg: Image):
         """Convert ROS Image to JPEG and cache it."""
+        self.received_frame_count += 1
+        self.last_frame_time = time.time()
+        self.last_frame_encoding = msg.encoding
         try:
             now = time.monotonic()
             if self.max_fps > 0 and now - self.last_encode_time < 1.0 / self.max_fps:
                 return
             self.last_encode_time = now
 
-            encoding = msg.encoding.lower()
+            encoding = msg.encoding.lower().replace("-", "_")
             h, w = msg.height, msg.width
-            data = bytes(msg.data)
+            if h <= 0 or w <= 0:
+                raise ValueError(f"invalid image size {w}x{h}")
 
-            if encoding in ("rgb8",):
-                arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 3)
-                arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-            elif encoding in ("bgr8",):
-                arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 3)
-            elif encoding in ("mono8", "8uc1"):
-                arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w)
-            elif encoding in ("rgba8",):
-                arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 4)
-                arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-            elif encoding in ("bgra8",):
-                arr = np.frombuffer(data, dtype=np.uint8).reshape(h, w, 4)
-                arr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+            channels_by_encoding = {
+                "rgb8": 3,
+                "bgr8": 3,
+                "rgba8": 4,
+                "bgra8": 4,
+                "mono8": 1,
+                "8uc1": 1,
+                "yuv422": 2,
+                "yuv422_yuy2": 2,
+                "yuyv": 2,
+                "uyvy": 2,
+            }
+            channels = channels_by_encoding.get(encoding)
+            if channels is None:
+                raise ValueError(f"unsupported image encoding {msg.encoding!r}")
+
+            packed_row_bytes = w * channels
+            row_bytes = int(msg.step) if msg.step else packed_row_bytes
+            if row_bytes < packed_row_bytes:
+                raise ValueError(
+                    f"image step {row_bytes} is smaller than {packed_row_bytes}"
+                )
+
+            data = np.frombuffer(bytes(msg.data), dtype=np.uint8)
+            required_bytes = h * row_bytes
+            if data.size < required_bytes:
+                raise ValueError(
+                    f"image payload has {data.size} bytes; expected at least {required_bytes}"
+                )
+
+            # ROS Image.step may include row padding. Slice it away before
+            # reshaping so valid camera frames are not silently discarded.
+            packed = data[:required_bytes].reshape(h, row_bytes)[:, :packed_row_bytes]
+            if channels == 1:
+                arr = packed.reshape(h, w)
             else:
-                return
+                arr = packed.reshape(h, w, channels)
+
+            if encoding == "rgb8":
+                arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+            elif encoding == "rgba8":
+                arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
+            elif encoding == "bgra8":
+                arr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+            elif encoding in ("yuv422", "yuv422_yuy2", "yuyv"):
+                arr = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUY2)
+            elif encoding == "uyvy":
+                arr = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_UYVY)
 
             if self.max_width > 0 and w > self.max_width:
                 scale = self.max_width / float(w)
                 arr = cv2.resize(arr, (self.max_width, int(h * scale)))
 
             quality = max(30, min(95, self.jpeg_quality))
-            _, jpeg_buf = cv2.imencode(".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, quality])
+            encoded, jpeg_buf = cv2.imencode(
+                ".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, quality]
+            )
+            if not encoded:
+                raise ValueError("OpenCV failed to encode the camera frame")
             with self.jpeg_lock:
                 self.latest_jpeg = jpeg_buf.tobytes()
                 self.latest_jpeg_seq += 1
-        except Exception:
-            pass
+                self.encoded_frame_count += 1
+                self.last_camera_error = None
+        except Exception as exc:
+            self.last_camera_error = str(exc)
+            now = time.monotonic()
+            if now - self.last_error_log_time >= 5.0:
+                self.get_logger().error(
+                    f"Camera frame rejected on {self.camera_topic}: {exc}"
+                )
+                self.last_error_log_time = now
 
     def get_jpeg(self):
         with self.jpeg_lock:
@@ -228,21 +283,18 @@ class WebServerNode(Node):
                 return None
             return self.latest_jpeg_seq, self.latest_jpeg
 
-    def on_mic_chunk(self, audio_bytes: bytes, mime: str, sample_rate: str) -> None:
-        """Called from the HTTP handler thread whenever a mic chunk arrives."""
-        msg = UInt8MultiArray()
-        msg.layout.dim = [MultiArrayDimension(label="bytes", size=len(audio_bytes), stride=1)]
-        msg.data = list(audio_bytes)
-        self.mic_chunks_pub.publish(msg)
-        if self._mic_chunk_count == 0:
-            meta = String()
-            meta.data = f"mime={mime};rate={sample_rate}"
-            self.mic_meta_pub.publish(meta)
-            self.get_logger().info(f"Mic stream started: {meta.data}")
-        self._mic_chunk_count += 1
-        if self._mic_chunk_count % 40 == 0:
-            self.get_logger().info(f"Mic: {self._mic_chunk_count} chunks received")
-
+    def get_camera_status(self):
+        with self.jpeg_lock:
+            return {
+                "available": self.latest_jpeg is not None,
+                "topic": self.camera_topic,
+                "opencv_available": HAS_CV2,
+                "received_frames": self.received_frame_count,
+                "encoded_frames": self.encoded_frame_count,
+                "last_frame_at": self.last_frame_time,
+                "last_encoding": self.last_frame_encoding,
+                "error": self.last_camera_error,
+            }
 
 def main():
     rclpy.init()
@@ -253,6 +305,7 @@ def main():
         pass
     finally:
         node.httpd.shutdown()
+        node.httpd.server_close()
         try:
             node.destroy_node()
         except KeyboardInterrupt:

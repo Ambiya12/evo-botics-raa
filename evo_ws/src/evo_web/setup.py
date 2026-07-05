@@ -23,6 +23,7 @@ setup(
     license="MIT",
     entry_points={
         "console_scripts": [
+            "arm_command_relay_node = evo_web.arm_command_relay_node:main",
             "web_server_node = evo_web.web_server_node:main",
         ],
     },

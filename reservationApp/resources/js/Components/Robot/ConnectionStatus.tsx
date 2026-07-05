@@ -16,6 +16,9 @@ type Props = {
 };
 
 export default function ConnectionStatus({ cameraUrl, lastMessageAt, rosUrl, status }: Props) {
+    const rosLabel = rosUrl || 'Robot IP not configured';
+    const cameraLabel = cameraUrl || 'Robot IP not configured';
+
     return (
         <div className="grid gap-3 md:grid-cols-3">
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
@@ -24,12 +27,12 @@ export default function ConnectionStatus({ cameraUrl, lastMessageAt, rosUrl, sta
                     <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${STATUS_STYLES[status]}`}>
                         {status.toUpperCase()}
                     </span>
-                    <span className="truncate text-xs text-gray-500">{rosUrl}</span>
+                    <span className="truncate text-xs text-gray-500">{rosLabel}</span>
                 </div>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Camera stream</p>
-                <p className="mt-2 truncate text-sm font-medium text-gray-900">{cameraUrl}</p>
+                <p className="mt-2 truncate text-sm font-medium text-gray-900">{cameraLabel}</p>
             </div>
             <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Last ROS message</p>

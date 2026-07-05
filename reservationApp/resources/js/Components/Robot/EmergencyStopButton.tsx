@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { RosApi } from './types';
 
 type Props = {
+    navigationActionName: string;
     ros: RosApi;
 };
 
@@ -17,7 +18,7 @@ const CANCEL_ALL_GOALS = {
     },
 };
 
-export default function EmergencyStopButton({ ros }: Props) {
+export default function EmergencyStopButton({ navigationActionName, ros }: Props) {
     const [estopActive, setEstopActive] = useState(false);
 
     useEffect(() => ros.subscribe('/e_stop_active', (message) => {
@@ -28,14 +29,15 @@ export default function EmergencyStopButton({ ros }: Props) {
 
     const publishZeroCommands = () => {
         ros.publish('/cmd_vel_nav', 'geometry_msgs/msg/Twist', ZERO_TWIST);
+        ros.publish('/cmd_vel_nav_raw', 'geometry_msgs/msg/Twist', ZERO_TWIST);
         ros.publish('/cmd_vel_teleop', 'geometry_msgs/msg/Twist', ZERO_TWIST);
-        ros.publish('/cmd_vel', 'geometry_msgs/msg/Twist', ZERO_TWIST);
+        ros.publish('/cmd_vel_selected', 'geometry_msgs/msg/Twist', ZERO_TWIST);
     };
 
     const stopRobot = () => {
         ros.publish('/e_stop', 'std_msgs/msg/Bool', { data: true });
         ros.publish('/explore/resume', 'std_msgs/msg/Bool', { data: false });
-        ros.callService('/navigate_to_pose/_action/cancel_goal', {
+        ros.callService(`${navigationActionName.replace(/\/$/, '')}/_action/cancel_goal`, {
             type: 'action_msgs/srv/CancelGoal',
             args: CANCEL_ALL_GOALS,
         });

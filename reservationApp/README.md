@@ -7,10 +7,12 @@ Cette application est développée avec **Laravel 12** (PHP) pour la partie Back
 ## 🛠️ Installation et Configuration Initiale
 
 Commencez par cloner le dépôt puis ouvrez votre terminal et lancez ces commandes :
+
 ```bash
 cd .\reservationApp\
 composer install
 ```
+
 ```bash
 ./vendor/bin/sail composer require livewire/livewire
 ```
@@ -20,20 +22,27 @@ En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME
 # Lancement du projet avec Docker
 
 - Ouvrez votre terminal (ouvrir un terminal WSL si vous êtes sur Windows) et exécutez la commande suivante pour lancer Docker et installer l'environnement :
+
 ```bash
 ./vendor/bin/sail up -d
 ```
+
 - Une fois le conteneur démarré, ouvrez un nouveau terminal et exécutez les commandes suivantes :
+
 ```bash
 ./vendor/bin/sail composer install
 ./vendor/bin/sail npm install
 ```
-- Générez la clé d'application et migrez la base de données : 
+
+- Générez la clé d'application et migrez la base de données :
+
 ```bash
 ./vendor/bin/sail artisan key:generate
 ./vendor/bin/sail artisan migrate
 ```
+
 - Lancez le projet avec :
+
 ```bash
 ./vendor/bin/sail npm run dev
 ```
@@ -62,6 +71,7 @@ php artisan app:make-admin email@exemple.com
 ```
 
 Comportement :
+
 - ❌ E-mail inconnu → la commande échoue (code de sortie 1), aucun changement.
 - ✅ Compte déjà admin → message neutre, aucune action (commande idempotente).
 - ✅ Sinon → le compte devient `admin`, e-mail vérifié, trace ajoutée à l'audit.
@@ -72,9 +82,9 @@ Sur une base fraîche, il n'existe encore aucun admin. La procédure est :
 
 1. Créer un compte normalement via la page d'inscription (`/register`).
 2. Le promouvoir avec la commande ci-dessus :
-   ```bash
-   php artisan app:make-admin votre-email@exemple.com
-   ```
+    ```bash
+    php artisan app:make-admin votre-email@exemple.com
+    ```
 3. Se connecter : l'accès aux routes `admin/*` est désormais ouvert.
 
 > En environnement de **développement**, le seeder crée déjà un admin prêt à l'emploi :
@@ -84,6 +94,7 @@ Sur une base fraîche, il n'existe encore aucun admin. La procédure est :
 
 Une fois connecté en admin, la page **`/admin/users`** permet de promouvoir ou rétrograder les
 autres comptes (avec confirmation). Garde-fous :
+
 - impossible de modifier **son propre** rôle ;
 - impossible de rétrograder le **dernier** administrateur.
 
