@@ -66,6 +66,25 @@ def test_presence_tracks_valid_observation_and_absence_timeout() -> None:
     assert not detector.is_person_present(now=1.1)
 
 
+def test_presence_armed_survives_five_second_detector_dropout() -> None:
+    detector = HumanApproachFilter(
+        config(debounce_frames=1, absence_reset_sec=10.0)
+    )
+    detector.process(person(), now=0.0)
+    detector.update_dialogue_state("PRESENCE_ARMED")
+
+    detector.process(person(confidence=0.1), now=1.0)
+    detector.tick(now=6.0)
+
+    assert detector.is_person_present(now=6.0)
+
+    # A later valid frame refreshes the departure timer, keeping the visitor
+    # armed for as long as they remain intermittently visible.
+    detector.process(person(), now=7.0)
+    detector.tick(now=16.0)
+    assert detector.is_person_present(now=16.0)
+
+
 @pytest.mark.parametrize(
     "observation",
     [

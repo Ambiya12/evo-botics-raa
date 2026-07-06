@@ -29,7 +29,7 @@ def generate_launch_description():
         DeclareLaunchArgument("zone_max_y", default_value="0.95"),
         DeclareLaunchArgument("debounce_frames", default_value="3"),
         DeclareLaunchArgument("cooldown_sec", default_value="10.0"),
-        DeclareLaunchArgument("absence_reset_sec", default_value="1.0"),
+        DeclareLaunchArgument("absence_reset_sec", default_value="10.0"),
 
         Node(
             package="evo_vision",

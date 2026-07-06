@@ -72,7 +72,7 @@ class HumanApproachNode(Node):
                 self.declare_parameter("cooldown_sec", 10.0).value
             ),
             absence_reset_sec=float(
-                self.declare_parameter("absence_reset_sec", 1.0).value
+                self.declare_parameter("absence_reset_sec", 10.0).value
             ),
         )
         if not self.zone_id:
