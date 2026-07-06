@@ -50,6 +50,7 @@ install(TARGETS
 )
 
 install(PROGRAMS
+  scripts/nav_readiness_checker
   scripts/navigation_orchestrator_node
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -90,6 +91,10 @@ if(BUILD_TESTING)
   ament_add_pytest_test(
     test_navigation_orchestrator
     test/test_navigation_orchestrator.py
+  )
+  ament_add_pytest_test(
+    test_nav_readiness_checker
+    test/test_nav_readiness_checker.py
   )
   ament_add_pytest_test(
     test_waypoints

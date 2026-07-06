@@ -24,24 +24,20 @@ class NavigationOutcome(str, Enum):
     FAILED = "failed"
 
 
-def validate_navigation_mode(
-    mock_navigation: bool,
+def validate_navigation_configuration(
     allow_real_navigation: bool,
     hardware_validated: bool,
-) -> str:
-    """Return the active mode or reject an unsafe real-navigation setup."""
-    if mock_navigation:
-        return "mock"
+) -> None:
+    """Reject an unsafe real-navigation setup."""
     if not allow_real_navigation:
         raise ValueError(
-            "Real navigation is locked. Set both mock_navigation:=false and "
-            "allow_real_navigation:=true only at a controlled navigation site."
+            "Real navigation is locked. Set allow_real_navigation:=true only "
+            "at a controlled navigation site."
         )
     if not hardware_validated:
         raise ValueError(
             "Real navigation requires hardware_validated: true in the waypoint registry"
         )
-    return "real"
 
 
 @dataclass(frozen=True)
@@ -60,6 +56,25 @@ class NavigationGates:
         return None
 
 
+def localization_is_ready(
+    valid_pose_received: bool,
+    last_seen_at: float,
+    timeout_sec: float,
+    now: float,
+) -> bool:
+    """Evaluate AMCL readiness without requiring periodic stationary updates.
+
+    AMCL may not republish a pose while the robot is stationary. A timeout of
+    zero therefore keeps a covariance-validated pose ready; positive values
+    remain available for deployments that explicitly require freshness.
+    """
+    if not valid_pose_received:
+        return False
+    if timeout_sec == 0.0:
+        return True
+    return now - last_seen_at <= timeout_sec
+
+
 @dataclass(frozen=True)
 class NavigationResult:
     outcome: NavigationOutcome
@@ -74,31 +89,6 @@ class Navigator(Protocol):
         cancelled: Callable[[], bool],
     ) -> NavigationResult:
         """Navigate to one already-validated configured waypoint."""
-
-
-class MockNavigator:
-    def __init__(self, outcome: NavigationOutcome = NavigationOutcome.ARRIVED) -> None:
-        self.outcome = outcome
-        self.calls: list[Waypoint] = []
-
-    def navigate(
-        self,
-        waypoint: Waypoint,
-        timeout_sec: float,
-        cancelled: Callable[[], bool],
-    ) -> NavigationResult:
-        self.calls.append(waypoint)
-        if cancelled():
-            return NavigationResult(
-                NavigationOutcome.CANCELLED, "Mock navigation cancelled."
-            )
-        messages = {
-            NavigationOutcome.ARRIVED: "Mock navigation arrived.",
-            NavigationOutcome.CANCELLED: "Mock navigation cancelled.",
-            NavigationOutcome.TIMEOUT: "Mock navigation timed out.",
-            NavigationOutcome.FAILED: "Mock navigation failed.",
-        }
-        return NavigationResult(self.outcome, messages[self.outcome])
 
 
 class NavigationOrchestrator:

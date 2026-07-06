@@ -1,0 +1,23 @@
+# School waypoints measured in the school_v1 map frame.
+frame_id: map
+
+# Keep false while measuring and reviewing.
+hardware_validated: true
+
+waypoints:
+  reception:
+    x: -1.49
+    y: -0.79
+    yaw: 1.01
+
+  # Room A — Laravel room_id 1
+  "1":
+    x: -6.78
+    y: -8.43
+    yaw: -2.36
+
+  # Room B — Laravel room_id 2
+  "2":
+    x: 2.82
+    y: -4.63
+    yaw: -0.73

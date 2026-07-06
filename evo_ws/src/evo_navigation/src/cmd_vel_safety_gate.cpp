@@ -24,6 +24,7 @@ public:
     const auto reset_topic = declare_parameter<std::string>("reset_topic", "/e_stop_reset");
     const auto status_topic = declare_parameter<std::string>("status_topic", "/e_stop_active");
     const auto zero_hz = declare_parameter<double>("zero_publish_hz", 20.0);
+    input_timeout_s_ = declare_parameter<double>("input_timeout_s", 0.5);
     teleop_priority_timeout_s_ =
       declare_parameter<double>("teleop_priority_timeout_s", 0.3);
 
@@ -39,6 +40,7 @@ public:
           if (teleopHasPriority()) {
             return;
           }
+          last_input_time_ = now();
           forwardIfSafe(*msg);
         });
 
@@ -46,6 +48,7 @@ public:
         teleop_topic, 10,
         [this](const geometry_msgs::msg::Twist::SharedPtr msg) {
           last_teleop_time_ = now();
+          last_input_time_ = last_teleop_time_;
           forwardIfSafe(*msg);
         });
 
@@ -71,6 +74,11 @@ public:
         [this]() {
           if (estop_active_) {
             publishZero();
+            return;
+          }
+          if (last_input_time_.nanoseconds() != 0 &&
+              (now() - last_input_time_).seconds() > input_timeout_s_) {
+            publishZero();
           }
         });
 
@@ -78,9 +86,10 @@ public:
     RCLCPP_INFO(
         get_logger(),
         "cmd_vel safety gate ready: nav=%s teleop=%s output=%s estop=%s reset=%s "
-        "teleop_priority_timeout=%.2fs",
+        "teleop_priority_timeout=%.2fs input_timeout=%.2fs",
         nav_topic.c_str(), teleop_topic.c_str(), output_topic.c_str(),
-        estop_topic.c_str(), reset_topic.c_str(), teleop_priority_timeout_s_);
+        estop_topic.c_str(), reset_topic.c_str(), teleop_priority_timeout_s_,
+        input_timeout_s_);
   }
 
 private:
@@ -134,7 +143,9 @@ private:
   }
 
   bool estop_active_{false};
+  double input_timeout_s_{0.5};
   double teleop_priority_timeout_s_{0.3};
+  rclcpp::Time last_input_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Time last_teleop_time_{0, 0, RCL_ROS_TIME};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr estop_status_pub_;

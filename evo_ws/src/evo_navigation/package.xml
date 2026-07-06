@@ -2,7 +2,7 @@
 <package format="3">
   <name>evo_navigation</name>
   <version>0.1.0</version>
-  <description>Evo-Botics SLAM, Nav2, exploration, and safety configuration for the Yahboom ROSMASTER M3 Pro.</description>
+  <description>Evo-Botics SLAM, saved-map Nav2, and motion safety for the Yahboom ROSMASTER M3 Pro.</description>
   <maintainer email="evobotics@example.com">Evo-Botics</maintainer>
   <license>MIT</license>
 
@@ -13,6 +13,7 @@
   <depend>ament_index_python</depend>
   <depend>evo_reception_interfaces</depend>
   <depend>geometry_msgs</depend>
+  <depend>lifecycle_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>rclcpp</depend>
@@ -41,12 +42,7 @@
   <exec_depend>nav2_smoother</exec_depend>
   <exec_depend>nav2_velocity_smoother</exec_depend>
   <exec_depend>nav2_waypoint_follower</exec_depend>
-  <exec_depend>navigation2</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
-  <exec_depend>explore_lite</exec_depend>
-  <exec_depend>explore_lite_msgs</exec_depend>
-  <exec_depend>robot_state_publisher</exec_depend>
-  <exec_depend>xacro</exec_depend>
   <exec_depend>rviz2</exec_depend>
 
   <export>
