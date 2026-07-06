@@ -138,7 +138,7 @@ def test_person_leaving_disarms_before_greeting() -> None:
     assert not manager.handle_intent("greeting").accepted
 
 
-def test_presence_fallback_greets_without_spoken_hello() -> None:
+def test_presence_timeout_starts_automatic_greeting() -> None:
     manager = DialogueManager()
     manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
 
@@ -146,8 +146,20 @@ def test_presence_fallback_greets_without_spoken_hello() -> None:
         DialogueEvent.PRESENCE_GREETING_TIMEOUT
     )
 
+    assert transition.accepted
     assert transition.speech == ("greeting",)
     assert manager.state == DialogueState.GREETING
+
+
+def test_presence_never_greets_without_spoken_hello() -> None:
+    manager = DialogueManager()
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    transition = manager.handle_event(DialogueEvent.INACTIVITY_TIMEOUT)
+
+    assert not transition.accepted
+    assert transition.speech == ()
+    assert manager.state == DialogueState.PRESENCE_ARMED
 
 
 def test_presence_armed_remains_ready_until_visitor_leaves() -> None:

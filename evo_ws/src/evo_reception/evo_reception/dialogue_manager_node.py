@@ -44,7 +44,7 @@ class DialogueManagerNode(Node):
         )
         self.presence_greeting_fallback_sec = float(
             self.declare_parameter(
-                "presence_greeting_fallback_sec", 2.0
+                "presence_greeting_fallback_sec", 5.0
             ).value
         )
         self.automatic_return_enabled = bool(
@@ -608,14 +608,14 @@ class DialogueManagerNode(Node):
             self.deadline = None
             self.deadline_event = None
         elif self.manager.state == DialogueState.PRESENCE_ARMED:
+            # A spoken greeting wins immediately. This fallback starts the same
+            # greeting if the visitor remains silent after presence is armed.
             if self.presence_greeting_fallback_sec > 0.0:
-                self.deadline_event = DialogueEvent.PRESENCE_GREETING_TIMEOUT
                 self.deadline = (
                     time.monotonic() + self.presence_greeting_fallback_sec
                 )
+                self.deadline_event = DialogueEvent.PRESENCE_GREETING_TIMEOUT
             else:
-                # Presence owns the armed lifetime. Stay ready for a greeting
-                # until the vision pipeline publishes VISITOR_LEFT.
                 self.deadline = None
                 self.deadline_event = None
         elif self.manager.state == DialogueState.WAITING_FOR_INTENT:

@@ -31,7 +31,6 @@ class ScanAcceptance:
 
 
 def validate_backend_configuration(
-    mock_mode: bool,
     validation_url: str,
     request_timeout_sec: float,
     duplicate_cooldown_sec: float,
@@ -43,14 +42,13 @@ def validate_backend_configuration(
         errors.append("request_timeout_sec must be greater than zero")
     if duplicate_cooldown_sec < 0.0:
         errors.append("duplicate_cooldown_sec must be non-negative")
-    if not mock_mode:
-        parsed = urlsplit(url)
-        if not url:
-            errors.append("validation_url is required when mock_mode is false")
-        elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            errors.append("validation_url must be an absolute HTTP(S) URL")
-        elif parsed.username is not None or parsed.password is not None:
-            errors.append("validation_url must not contain credentials")
+    parsed = urlsplit(url)
+    if not url:
+        errors.append("validation_url is required")
+    elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        errors.append("validation_url must be an absolute HTTP(S) URL")
+    elif parsed.username is not None or parsed.password is not None:
+        errors.append("validation_url must not contain credentials")
     if errors:
         raise ValueError(
             "Invalid QR backend configuration: " + "; ".join(errors)

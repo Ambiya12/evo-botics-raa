@@ -58,28 +58,11 @@ class QrReservationBridgeNode(Node):
         self.enable_legacy_topic_bridge = bool(
             self.declare_parameter("enable_legacy_topic_bridge", False).value
         )
-        self.mock_mode = bool(
-            self.declare_parameter("mock_mode", True).value
-        )
         self.validation_url = validate_backend_configuration(
-            self.mock_mode,
             str(self.validation_url),
             self.request_timeout_sec,
             self.duplicate_cooldown_sec,
         )
-        mock_outcome_value = str(
-            self.declare_parameter("mock_outcome", "valid").value
-        ).strip().lower()
-        self.mock_destination_id = str(
-            self.declare_parameter("mock_destination_id", "mock-room").value
-        ).strip()
-        try:
-            self.mock_outcome = QrValidationOutcome(mock_outcome_value)
-        except ValueError as exc:
-            raise ValueError(
-                "'mock_outcome' must be valid, invalid, expired, duplicate, "
-                "or unavailable"
-            ) from exc
 
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
         self.create_service(
@@ -101,8 +84,7 @@ class QrReservationBridgeNode(Node):
         self.get_logger().info(
             f"QR reservation bridge serving {self.validation_service}, "
             f"legacy_topic_bridge={self.enable_legacy_topic_bridge}, "
-            f"mock_mode={self.mock_mode}, "
-            f"backend={'mock' if self.mock_mode else 'configured-real'}"
+            f"backend={self.validation_url}"
         )
 
     def on_qr_detection(self, msg: String) -> None:
@@ -164,23 +146,6 @@ class QrReservationBridgeNode(Node):
                 "QR code could not be decoded.",
                 error_code="invalid_qr",
             )
-        if self.mock_mode:
-            destination_id = (
-                self.mock_destination_id
-                if self.mock_outcome == QrValidationOutcome.VALID
-                else ""
-            )
-            return BridgeValidation(
-                self.mock_outcome,
-                f"Mock QR validation outcome: {self.mock_outcome.value}.",
-                destination_id=destination_id,
-                error_code=(
-                    None
-                    if self.mock_outcome == QrValidationOutcome.VALID
-                    else self.mock_outcome.value
-                ),
-            )
-
         try:
             api_response = self.post_json(
                 self.validation_url, {"qr_payload": qr_payload}

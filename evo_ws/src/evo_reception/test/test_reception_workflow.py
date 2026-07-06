@@ -3,12 +3,12 @@ from pathlib import Path
 import pytest
 
 from evo_navigation.navigation_orchestrator import (
-    MockNavigator,
     NavigationGates,
     NavigationOrchestrator,
     NavigationOutcome,
+    NavigationResult,
 )
-from evo_navigation.waypoints import WaypointRegistry
+from evo_navigation.waypoints import Waypoint, WaypointRegistry
 from evo_reception.dialogue_manager import (
     DialogueEvent,
     DialogueManager,
@@ -25,6 +25,19 @@ from evo_vision.human_approach import (
     PersonObservation,
 )
 from evo_voice.intent_detector import IntentDetector
+
+
+class RecordingNavigator:
+    def __init__(self, outcome: NavigationOutcome = NavigationOutcome.ARRIVED) -> None:
+        self.outcome = outcome
+        self.calls: list[Waypoint] = []
+
+    def navigate(self, waypoint, timeout_sec, cancelled) -> NavigationResult:
+        self.calls.append(waypoint)
+        outcome = (
+            NavigationOutcome.CANCELLED if cancelled() else self.outcome
+        )
+        return NavigationResult(outcome, f"Navigation {outcome.value}.")
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -55,7 +68,7 @@ def approach_filter() -> HumanApproachFilter:
 
 
 def person() -> PersonObservation:
-    return PersonObservation("mock-person", 0.95, 1.5, 0.5, 0.5)
+    return PersonObservation("person-1", 0.95, 1.5, 0.5, 0.5)
 
 
 def ready_gates() -> NavigationGates:
@@ -78,7 +91,7 @@ def advance_to_qr_verification(manager: DialogueManager) -> None:
 
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
     scan = gate.accept(
-        '{"decoded_text":"mock-signed-payload"}',
+        '{"decoded_text":"signed-payload"}',
         manager.state.value,
         manager.qr_prompt_completed,
     )
@@ -87,7 +100,7 @@ def advance_to_qr_verification(manager: DialogueManager) -> None:
     assert manager.state == DialogueState.VERIFYING_QR
 
 
-def make_orchestrator(navigator: MockNavigator, gates=ready_gates):
+def make_orchestrator(navigator: RecordingNavigator, gates=ready_gates):
     return NavigationOrchestrator(
         WaypointRegistry.from_yaml(WAYPOINT_CONFIG),
         navigator,
@@ -97,7 +110,7 @@ def make_orchestrator(navigator: MockNavigator, gates=ready_gates):
 
 
 @pytest.mark.parametrize("destination_id", ["1", "2"])
-def test_complete_mock_workflow_returns_to_reception(
+def test_complete_workflow_returns_to_reception(
     destination_id: str,
 ) -> None:
     manager = DialogueManager()
@@ -105,7 +118,7 @@ def test_complete_mock_workflow_returns_to_reception(
     manager.handle_qr_result(QrValidationOutcome.VALID, destination_id)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
 
-    navigator = MockNavigator(NavigationOutcome.ARRIVED)
+    navigator = RecordingNavigator(NavigationOutcome.ARRIVED)
     orchestrator = make_orchestrator(navigator)
     manager.handle_event(DialogueEvent.NAVIGATION_STARTED)
     outbound = orchestrator.execute(destination_id, timeout_sec=10.0)
@@ -129,7 +142,7 @@ def test_invalid_qr_never_calls_navigation() -> None:
     manager = DialogueManager(max_retries=0)
     advance_to_qr_verification(manager)
     transition = manager.handle_qr_result(QrValidationOutcome.INVALID)
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
 
     assert manager.state == DialogueState.ERROR
     assert "guidance_start" not in transition.speech
@@ -141,7 +154,7 @@ def test_navigation_gate_failure_enters_safe_error_state() -> None:
     advance_to_qr_verification(manager)
     manager.handle_qr_result(QrValidationOutcome.VALID, "1")
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
     orchestrator = make_orchestrator(
         navigator,
         gates=lambda: NavigationGates(True, True, True),
@@ -165,7 +178,7 @@ def test_return_failure_enters_safe_error_state() -> None:
     manager.handle_event(DialogueEvent.NAVIGATION_ARRIVED)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
 
-    navigator = MockNavigator(NavigationOutcome.FAILED)
+    navigator = RecordingNavigator(NavigationOutcome.FAILED)
     result = make_orchestrator(navigator).execute(
         "reception", timeout_sec=10.0
     )

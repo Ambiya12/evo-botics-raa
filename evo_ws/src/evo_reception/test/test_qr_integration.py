@@ -29,17 +29,17 @@ def test_destination_allowlist_must_not_be_empty() -> None:
 
 
 @dataclass(frozen=True)
-class MockBridgeResult:
+class BridgeResult:
     outcome: QrValidationOutcome
     destination_id: str = ""
 
 
-class MockReservationBridge:
-    def __init__(self, result: MockBridgeResult) -> None:
+class RecordingReservationBridge:
+    def __init__(self, result: BridgeResult) -> None:
         self.result = result
         self.calls: list[str] = []
 
-    def verify(self, payload: str) -> MockBridgeResult:
+    def verify(self, payload: str) -> BridgeResult:
         self.calls.append(payload)
         return self.result
 
@@ -58,7 +58,7 @@ def waiting_for_qr(max_retries: int = 0) -> DialogueManager:
 def verify_scan(
     manager: DialogueManager,
     gate: QrScanGate,
-    bridge: MockReservationBridge,
+    bridge: RecordingReservationBridge,
     raw_scan: str = '{"decoded_text":"signed-payload"}',
 ):
     acceptance = gate.accept(
@@ -98,23 +98,18 @@ def test_bridge_error_codes_map_to_workflow_outcomes(
     assert outcome_from_error_code(error_code) == outcome
 
 
-def test_backend_defaults_can_remain_hardware_free() -> None:
-    assert validate_backend_configuration(True, "", 3.0, 5.0) == ""
-
-
 def test_real_backend_requires_explicit_absolute_url() -> None:
     with pytest.raises(ValueError, match="validation_url"):
-        validate_backend_configuration(False, "", 3.0, 5.0)
+        validate_backend_configuration("", 3.0, 5.0)
     with pytest.raises(ValueError, match="absolute HTTP"):
-        validate_backend_configuration(False, "localhost/api", 3.0, 5.0)
+        validate_backend_configuration("localhost/api", 3.0, 5.0)
 
 
 def test_backend_rejects_invalid_timeout_and_embedded_credentials() -> None:
     with pytest.raises(ValueError, match="request_timeout_sec"):
-        validate_backend_configuration(True, "", 0.0, 5.0)
+        validate_backend_configuration("https://example.test/validate", 0.0, 5.0)
     with pytest.raises(ValueError, match="credentials"):
         validate_backend_configuration(
-            False,
             "https://user:secret@example.test/validate",
             3.0,
             5.0,
@@ -137,8 +132,8 @@ def test_only_approved_backend_success_shape_returns_data() -> None:
 def test_scan_outside_waiting_for_qr_never_calls_bridge() -> None:
     manager = DialogueManager()
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.VALID, "room-42")
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.VALID, "room-42")
     )
 
     acceptance = gate.accept(
@@ -155,8 +150,8 @@ def test_scan_outside_waiting_for_qr_never_calls_bridge() -> None:
 def test_malformed_scan_is_invalid_without_calling_bridge() -> None:
     manager = waiting_for_qr(max_retries=0)
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.VALID, "room-42")
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.VALID, "room-42")
     )
 
     acceptance = gate.accept(
@@ -177,8 +172,8 @@ def test_malformed_scan_is_invalid_without_calling_bridge() -> None:
 def test_valid_result_stores_stable_destination_id() -> None:
     manager = waiting_for_qr()
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.VALID, "42")
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.VALID, "42")
     )
 
     verify_scan(manager, gate, bridge)
@@ -201,7 +196,7 @@ def test_rejected_results_never_store_destination_or_request_guidance(
 ) -> None:
     manager = waiting_for_qr(max_retries=0)
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(MockBridgeResult(outcome))
+    bridge = RecordingReservationBridge(BridgeResult(outcome))
 
     transition = verify_scan(manager, gate, bridge)
 
@@ -214,8 +209,8 @@ def test_duplicate_scan_is_ignored_without_second_bridge_call() -> None:
     now = [10.0]
     manager = waiting_for_qr(max_retries=1)
     gate = QrScanGate(duplicate_cooldown_sec=5.0, clock=lambda: now[0])
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.INVALID)
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.INVALID)
     )
     verify_scan(manager, gate, bridge)
     manager.handle_event(DialogueEvent.TTS_COMPLETED)
@@ -234,8 +229,8 @@ def test_duplicate_scan_is_ignored_without_second_bridge_call() -> None:
 def test_invalid_qr_allows_a_new_scan_after_retry_message_completes() -> None:
     manager = waiting_for_qr(max_retries=2)
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.INVALID)
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.INVALID)
     )
 
     transition = verify_scan(manager, gate, bridge)
@@ -263,8 +258,8 @@ def test_invalid_qr_allows_a_new_scan_after_retry_message_completes() -> None:
 def test_bridge_duplicate_response_returns_to_qr_wait_without_guidance() -> None:
     manager = waiting_for_qr()
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.DUPLICATE)
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.DUPLICATE)
     )
 
     transition = verify_scan(manager, gate, bridge)
@@ -278,8 +273,8 @@ def test_bridge_duplicate_response_returns_to_qr_wait_without_guidance() -> None
 def test_valid_response_without_destination_fails_closed() -> None:
     manager = waiting_for_qr()
     gate = QrScanGate(duplicate_cooldown_sec=5.0)
-    bridge = MockReservationBridge(
-        MockBridgeResult(QrValidationOutcome.VALID, "")
+    bridge = RecordingReservationBridge(
+        BridgeResult(QrValidationOutcome.VALID, "")
     )
 
     transition = verify_scan(manager, gate, bridge)
