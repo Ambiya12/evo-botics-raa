@@ -13,7 +13,6 @@ use Illuminate\Support\Facades\Mail;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-#[Layout('layouts.app')]
 class Reservation extends Component
 {
     public $name = '';

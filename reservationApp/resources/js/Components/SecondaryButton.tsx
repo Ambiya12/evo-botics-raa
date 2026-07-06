@@ -1,7 +1,7 @@
 export default function SecondaryButton({
     type = 'button',
     className = '',
-    disabled,
+    disabled = false,
     children,
     ...props
 }) {

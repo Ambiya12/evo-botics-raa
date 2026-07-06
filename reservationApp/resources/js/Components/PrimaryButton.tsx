@@ -1,6 +1,6 @@
 export default function PrimaryButton({
     className = '',
-    disabled,
+    disabled = false,
     children,
     ...props
 }) {
