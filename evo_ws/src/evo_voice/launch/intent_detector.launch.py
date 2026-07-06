@@ -13,6 +13,12 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("transcript_topic", default_value="/voice/stt/transcript"),
         DeclareLaunchArgument("result_topic", default_value="/voice/intent/result"),
+        DeclareLaunchArgument(
+            "dialogue_state_topic", default_value="/reception/dialogue/state"
+        ),
+        DeclareLaunchArgument(
+            "diagnostics_topic", default_value="/voice/intent/diagnostics"
+        ),
         DeclareLaunchArgument("intent_config_path", default_value=default_config),
 
         Node(
@@ -22,6 +28,10 @@ def generate_launch_description():
             parameters=[{
                 "transcript_topic": LaunchConfiguration("transcript_topic"),
                 "result_topic": LaunchConfiguration("result_topic"),
+                "dialogue_state_topic": LaunchConfiguration(
+                    "dialogue_state_topic"
+                ),
+                "diagnostics_topic": LaunchConfiguration("diagnostics_topic"),
                 "intent_config_path": LaunchConfiguration("intent_config_path"),
             }],
             output="screen",

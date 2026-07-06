@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import shutil
 import tempfile
+import time
 
 from ament_index_python.packages import get_package_share_directory
 import rclpy
@@ -12,10 +14,10 @@ from std_msgs.msg import String
 
 from evo_voice.phrases import PhraseBook, PhraseConfigurationError
 from evo_voice.tts_queue import (
-    MockSpeechPlayer,
     PiperSpeechPlayer,
     QueuedTts,
     SpeakRequest,
+    SpeechProcessError,
 )
 
 
@@ -33,7 +35,11 @@ class TtsNode(Node):
         status_topic = str(
             self.declare_parameter("status_topic", "/voice/tts/status").value
         )
-        self.mock_audio = bool(self.declare_parameter("mock_audio", True).value)
+        diagnostics_topic = str(
+            self.declare_parameter(
+                "diagnostics_topic", "/voice/tts/diagnostics"
+            ).value
+        )
         model_path = _path(self.declare_parameter("piper_model_path", "").value)
         phrase_config_path = _path(
             self.declare_parameter(
@@ -66,8 +72,16 @@ class TtsNode(Node):
         audio_output_device = str(
             self.declare_parameter("audio_output_device", "").value
         ).strip()
+        synthesis_timeout_sec = float(
+            self.declare_parameter("synthesis_timeout_sec", 30.0).value
+        )
+        playback_timeout_sec = float(
+            self.declare_parameter("playback_timeout_sec", 30.0).value
+        )
 
         self.phrase_book = PhraseBook.from_yaml(phrase_config_path)
+        self.audio_output_device = audio_output_device
+        self.request_counter = 0
         player = self._create_player(
             model_path,
             output_path,
@@ -75,6 +89,8 @@ class TtsNode(Node):
             audio_player_executable,
             audio_output_device,
             cache_directory,
+            synthesis_timeout_sec,
+            playback_timeout_sec,
         )
 
         status_qos = QoSProfile(
@@ -83,11 +99,22 @@ class TtsNode(Node):
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.status_publisher = self.create_publisher(String, status_topic, status_qos)
-        self.tts_queue = QueuedTts(player, self.publish_status)
+        self.diagnostics_publisher = self.create_publisher(
+            String, diagnostics_topic, status_qos
+        )
+        self.tts_queue = QueuedTts(
+            player,
+            self.publish_status,
+            self.on_playback_error,
+        )
         self.create_subscription(String, request_topic, self.on_speak_request, 10)
+        self.publish_diagnostic(
+            "ready",
+            backend="piper",
+            audio_output_device=audio_output_device or "system-default",
+        )
         self.get_logger().info(
             f"Queued TTS ready: request={request_topic} status={status_topic} "
-            f"mock_audio={self.mock_audio} "
             f"audio_output_device={audio_output_device or '<system-default>'}"
         )
 
@@ -99,13 +126,12 @@ class TtsNode(Node):
         audio_player_executable: str,
         audio_output_device: str,
         cache_directory: Path,
+        synthesis_timeout_sec: float,
+        playback_timeout_sec: float,
     ):
-        if self.mock_audio:
-            return MockSpeechPlayer()
-
         errors: list[str] = []
         if model_path == Path():
-            errors.append("'piper_model_path' is required when mock_audio is false")
+            errors.append("'piper_model_path' is required")
         elif not model_path.is_file():
             errors.append(f"'piper_model_path' does not exist: {model_path}")
         if not output_path.name:
@@ -114,6 +140,10 @@ class TtsNode(Node):
             errors.append(f"'output_path' parent does not exist: {output_path.parent}")
         if not cache_directory.name:
             errors.append("'cache_directory' must name a directory")
+        if synthesis_timeout_sec <= 0.0:
+            errors.append("'synthesis_timeout_sec' must be greater than zero")
+        if playback_timeout_sec <= 0.0:
+            errors.append("'playback_timeout_sec' must be greater than zero")
         for parameter, executable in (
             ("piper_executable", piper_executable),
             ("audio_player_executable", audio_player_executable),
@@ -134,16 +164,25 @@ class TtsNode(Node):
             audio_player_executable=audio_player_executable,
             audio_output_device=audio_output_device,
             cache_directory=cache_directory,
-            prewarm_texts=self.phrase_book.configured_texts(),
+            prewarm_texts=(
+                self.phrase_book.resolve_request("phrase:greeting"),
+            ),
+            synthesis_timeout_sec=synthesis_timeout_sec,
+            playback_timeout_sec=playback_timeout_sec,
             latency_callback=self.log_latency,
         )
 
     def on_speak_request(self, message: String) -> None:
         try:
             text = self.phrase_book.resolve_request(message.data)
-            self.tts_queue.enqueue(SpeakRequest(text=text))
+            self.request_counter += 1
+            request_id = f"tts-{self.request_counter}"
+            self.tts_queue.enqueue(
+                SpeakRequest(text=text, request_id=request_id)
+            )
             self.get_logger().info(
-                f"Queued TTS request: characters={len(text)}"
+                f"Queued TTS request: request_id={request_id} "
+                f"characters={len(text)}"
             )
         except ValueError as exc:
             self.get_logger().error(str(exc))
@@ -154,6 +193,47 @@ class TtsNode(Node):
 
     def log_latency(self, phase: str, duration: float) -> None:
         self.get_logger().info(f"TTS latency: {phase}={duration:.3f}")
+        if hasattr(self, "diagnostics_publisher"):
+            self.publish_diagnostic(
+                "latency",
+                phase=phase,
+                duration_sec=duration,
+            )
+
+    def on_playback_error(
+        self,
+        request: SpeakRequest,
+        error: Exception,
+    ) -> None:
+        details: dict[str, object] = {
+            "request_id": request.request_id,
+            "audio_output_device": (
+                self.audio_output_device or "system-default"
+            ),
+            "error": str(error),
+        }
+        if isinstance(error, SpeechProcessError):
+            details.update(
+                phase=error.phase,
+                command=list(error.command),
+                timeout_sec=error.timeout_sec,
+                return_code=error.return_code,
+            )
+        self.get_logger().error(
+            f"TTS request failed: request_id={request.request_id} "
+            f"error={error}"
+        )
+        self.publish_diagnostic("playback_failed", **details)
+
+    def publish_diagnostic(self, event: str, **details: object) -> None:
+        self.diagnostics_publisher.publish(
+            String(
+                data=json.dumps(
+                    {"event": event, "timestamp": time.time(), **details},
+                    ensure_ascii=False,
+                )
+            )
+        )
 
     def destroy_node(self) -> bool:
         self.tts_queue.shutdown()

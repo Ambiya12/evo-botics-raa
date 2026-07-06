@@ -1,1 +1,1 @@
-"""Evo-Botics speech translation package."""
+"""Evo-Botics reception speech package."""

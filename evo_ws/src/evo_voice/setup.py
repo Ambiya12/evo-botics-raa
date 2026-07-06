@@ -19,7 +19,7 @@ setup(
     zip_safe=True,
     maintainer="Evo-Botics",
     maintainer_email="evobotics@example.com",
-    description="Evo-Botics speech translation node.",
+    description="Evo-Botics reception speech pipeline.",
     license="MIT",
     entry_points={
         "console_scripts": [
@@ -27,7 +27,6 @@ setup(
             "reception_metrics = evo_voice.reliability_metrics:main",
             "stt_node = evo_voice.stt_node:main",
             "tts_node = evo_voice.tts_node:main",
-            "translator_node = evo_voice.translator_fr_en:main",
         ],
     },
 )

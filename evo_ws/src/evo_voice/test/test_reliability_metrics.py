@@ -49,7 +49,7 @@ def test_empty_percentile_is_not_reported() -> None:
 
 def test_measurement_records_require_transcripts(tmp_path) -> None:
     path = tmp_path / "measurements.jsonl"
-    path.write_text(json.dumps({"environment": "mock"}), encoding="utf-8")
+    path.write_text(json.dumps({"environment": "test"}), encoding="utf-8")
 
     with pytest.raises(ValueError, match="missing required field"):
         load_jsonl(path)
