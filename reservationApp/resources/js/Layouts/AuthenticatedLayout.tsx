@@ -83,8 +83,8 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <button onClick={() => setLangOpen(!langOpen)} type="button"
                                     className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm hover:bg-gray-50 transition">
                                     <span className="text-lg">{LOCALES[locale]?.flag}</span>
-                                    <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                                    <svg className="h-3 w-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
                                     </svg>
                                 </button>
 
