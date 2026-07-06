@@ -26,14 +26,14 @@ const JOINTS: JointConfig[] = [
 const HOME: ArmJoints = { joint1: 90, joint2: 90, joint3: 90, joint4: 90, joint5: 90, joint6: 90, time: 900 };
 const STOW: ArmJoints = { joint1: 90, joint2: 120, joint3: 10, joint4: 20, joint5: 90, joint6: 30, time: 900 };
 
-const PRESETS: Record<string, ArmJoints> = {
+const PRESETS: Record<string, Partial<ArmJoints>> = {
     Home: HOME,
     Stow: STOW,
     Camera: { joint1: 90, joint2: 60, joint3: 45, joint4: 90, joint5: 90, joint6: 90, time: 1200 },
     Up: { joint1: 90, joint2: 30, joint3: 60, joint4: 90, joint5: 90, joint6: 90, time: 1200 },
     Present: { joint1: 90, joint2: 100, joint3: 70, joint4: 80, joint5: 90, joint6: 30, time: 1200 },
-    Open: { ...HOME, joint6: 30, time: 700 },
-    Close: { ...HOME, joint6: 90, time: 700 },
+    Open: { joint6: 30, time: 700 },
+    Close: { joint6: 90, time: 700 },
 };
 
 const clampJoint = (value: number, joint: JointConfig) => Math.max(joint.min, Math.min(joint.max, Math.round(value)));
@@ -44,6 +44,13 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
     const [draft, setDraft] = useState<ArmJoints>(HOME);
     const sendTimerRef = useRef<number | null>(null);
 
+    const cancelScheduledPublish = () => {
+        if (sendTimerRef.current) {
+            window.clearTimeout(sendTimerRef.current);
+            sendTimerRef.current = null;
+        }
+    };
+
     useEffect(() => {
         if (!enabled && currentJoints) {
             setDraft(currentJoints);
@@ -52,6 +59,7 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
 
     useEffect(() => {
         if (connected) return;
+        cancelScheduledPublish();
         setEnabled(false);
         setHoldEnabled(false);
     }, [connected]);
@@ -80,10 +88,11 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
 
     const schedulePublish = (next: ArmJoints) => {
         if (!enabled) return;
-        if (sendTimerRef.current) {
-            window.clearTimeout(sendTimerRef.current);
-        }
-        sendTimerRef.current = window.setTimeout(() => publishArm(next, 'Arm slider'), 120);
+        cancelScheduledPublish();
+        sendTimerRef.current = window.setTimeout(() => {
+            sendTimerRef.current = null;
+            publishArm(next, 'Arm slider');
+        }, 120);
     };
 
     const updateJoint = (joint: JointConfig, value: number) => {
@@ -95,10 +104,13 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
     };
 
     const applyPreset = (name: string) => {
-        const preset = PRESETS[name];
-        setDraft(preset);
-        publishArm(preset, `Arm preset ${name}`);
+        cancelScheduledPublish();
+        const next = { ...sanitizedDraft, ...PRESETS[name] };
+        setDraft(next);
+        publishArm(next, `Arm preset ${name}`);
     };
+
+    useEffect(() => cancelScheduledPublish, []);
 
     useEffect(() => {
         if (!enabled || !holdEnabled) return;
@@ -117,6 +129,7 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
                     className={`rounded-lg px-3 py-2 text-xs font-semibold transition ${enabled ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                     disabled={!connected}
                     onClick={() => {
+                        cancelScheduledPublish();
                         setEnabled((value) => !value);
                         setHoldEnabled(false);
                     }}
@@ -182,7 +195,10 @@ export default function ArmControlPanel({ connected, currentJoints, ros }: Props
             <button
                 className="mt-4 w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={!enabled}
-                onClick={() => publishArm(sanitizedDraft, 'Arm apply')}
+                onClick={() => {
+                    cancelScheduledPublish();
+                    publishArm(sanitizedDraft, 'Arm apply');
+                }}
                 type="button"
             >
                 Apply Arm Pose

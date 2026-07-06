@@ -29,6 +29,7 @@ const Navigation: LayoutComponent = () => {
                     onGoal={(x, y) => sendGoal(x, y)}
                     path={telemetry.path}
                     pose={telemetry.pose}
+                    waypoints={waypoints}
                 />
                 <div className="space-y-6">
                     <RobotActionsPanel

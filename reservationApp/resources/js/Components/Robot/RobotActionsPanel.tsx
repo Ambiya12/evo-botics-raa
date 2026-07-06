@@ -28,7 +28,10 @@ export default function RobotActionsPanel({ navigationActionName, pose, ros }: P
         }
         const yaw = (yawDeg * Math.PI) / 180;
         ros.publish('/initialpose', 'geometry_msgs/msg/PoseWithCovarianceStamped', {
-            header: { frame_id: 'map' },
+            header: {
+                frame_id: 'map',
+                stamp: { sec: 0, nanosec: 0 },
+            },
             pose: {
                 pose: {
                     position: { x, y, z: 0 },
