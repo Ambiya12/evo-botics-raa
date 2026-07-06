@@ -17,7 +17,6 @@ RUN apt-get update \
       ros-humble-cv-bridge \
       ros-humble-foxglove-bridge \
       ros-humble-nav2-bringup \
-      ros-humble-navigation2 \
       ros-humble-robot-state-publisher \
       ros-humble-rosbridge-server \
       ros-humble-rviz2 \

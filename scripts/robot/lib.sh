@@ -11,14 +11,65 @@ require_jetson_ip() {
   fi
 }
 
+ssh_control_path() {
+  # Keep this deliberately short: macOS limits Unix-domain socket paths.
+  printf '/tmp/evo-ssh-%s-%s' \
+    "$JETSON_USER" "${JETSON_IP//./-}"
+}
+
 _ssh() {
+  local control_path
   require_jetson_ip || return 1
-  ssh -o ConnectTimeout=8 "${JETSON_USER}@${JETSON_IP}" "$@"
+  control_path="$(ssh_control_path)"
+  ssh \
+    -o ConnectTimeout=8 \
+    -o ConnectionAttempts=2 \
+    -o ControlMaster=auto \
+    -o "ControlPersist=${SSH_CONTROL_PERSIST_SEC}" \
+    -o "ControlPath=${control_path}" \
+    -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL_SEC}" \
+    -o "ServerAliveCountMax=${SSH_SERVER_ALIVE_COUNT_MAX}" \
+    "${JETSON_USER}@${JETSON_IP}" "$@"
 }
 
 _ssh_tty() {
+  local control_path
   require_jetson_ip || return 1
-  ssh -t -o ConnectTimeout=8 "${JETSON_USER}@${JETSON_IP}" "$@"
+  control_path="$(ssh_control_path)"
+  ssh -t \
+    -o ConnectTimeout=8 \
+    -o ConnectionAttempts=2 \
+    -o ControlMaster=auto \
+    -o "ControlPersist=${SSH_CONTROL_PERSIST_SEC}" \
+    -o "ControlPath=${control_path}" \
+    -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL_SEC}" \
+    -o "ServerAliveCountMax=${SSH_SERVER_ALIVE_COUNT_MAX}" \
+    "${JETSON_USER}@${JETSON_IP}" "$@"
+}
+
+ensure_ssh_connection() {
+  local control_path
+  control_path="$(ssh_control_path)"
+  echo "[ssh] establishing persistent connection to ${JETSON_USER}@${JETSON_IP}"
+  if ! _ssh "true"; then
+    echo "[ssh] Jetson is unreachable; no robot services were started." >&2
+    return 1
+  fi
+  echo "[ssh] ready: multiplexed control connection ${control_path}"
+}
+
+# Preserve the difference between a normal remote false result and a broken
+# SSH transport. Optional probes (for example tmux has-session) may legitimately
+# return 1, but must never interpret SSH's 255 as "service not running".
+_ssh_test() {
+  local status
+  _ssh "$@"
+  status=$?
+  if [ "$status" -eq 255 ]; then
+    echo "[ssh] lost connection to ${JETSON_USER}@${JETSON_IP}; aborting startup" >&2
+    return 2
+  fi
+  return "$status"
 }
 
 remote_quote() { printf "%s" "$1" | sed "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/"; }
@@ -28,7 +79,7 @@ _ros_prelude() {
 "source /opt/ros/humble/setup.bash; \
 source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true; \
 source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true; \
-source /root/evo_ws/install/setup.bash; \
+source /root/evo_ws/install/setup.bash 2>/dev/null || true; \
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}; \
 export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}; \
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}"
@@ -573,12 +624,11 @@ service_cmd() {
     reception)
       local validation_url
       validation_url="$(resolve_reception_validation_url)" || return 1
-      echo "ros2 launch evo_reception reception.launch.py mock_mode:=false validation_url:=${validation_url}"
+      echo "ros2 launch evo_reception reception.launch.py validation_url:=${validation_url}"
       ;;
-    reception_mock) echo "ros2 launch evo_reception reception.launch.py mock_mode:=true mock_outcome:=${RECEPTION_MOCK_OUTCOME} mock_destination_id:=${RECEPTION_MOCK_DESTINATION_ID}" ;;
     voice)
       local voice_cmd
-      voice_cmd="ros2 launch evo_voice reception_voice.launch.py tts_mock_audio:=${TTS_MOCK_AUDIO} stt_mock_audio:=${STT_MOCK_AUDIO} stt_device:=${STT_DEVICE} stt_compute_type:=${STT_COMPUTE_TYPE} language:=${VOICE_LANGUAGE} microphone_device:=${MICROPHONE_DEVICE} phrase_time_limit_sec:=${STT_PHRASE_TIME_LIMIT_SEC} pause_threshold_sec:=${STT_PAUSE_THRESHOLD_SEC} non_speaking_duration_sec:=${STT_NON_SPEAKING_DURATION_SEC}"
+      voice_cmd="ros2 launch evo_voice reception_voice.launch.py stt_device:=${STT_DEVICE} stt_compute_type:=${STT_COMPUTE_TYPE} language:=${VOICE_LANGUAGE} microphone_device:=${MICROPHONE_DEVICE} phrase_time_limit_sec:=${STT_PHRASE_TIME_LIMIT_SEC} pause_threshold_sec:=${STT_PAUSE_THRESHOLD_SEC} non_speaking_duration_sec:=${STT_NON_SPEAKING_DURATION_SEC}"
       if [ -n "$PIPER_MODEL_PATH" ]; then
         voice_cmd="${voice_cmd} piper_model_path:=${PIPER_MODEL_PATH}"
       fi
@@ -593,15 +643,8 @@ service_cmd() {
     dialogue)
       echo "ros2 launch evo_reception dialogue_manager.launch.py presence_greeting_fallback_sec:=${PRESENCE_GREETING_FALLBACK_SEC} intent_timeout_sec:=${INTENT_TIMEOUT_SEC} qr_inactivity_timeout_sec:=${QR_INACTIVITY_TIMEOUT_SEC} allowed_destination_ids_csv:=${RECEPTION_ALLOWED_DESTINATION_IDS} automatic_return_enabled:=${AUTOMATIC_RETURN_ENABLED}"
       ;;
-    stationary_nav)
-      if [ -n "$RECEPTION_WAYPOINT_CONFIG_PATH" ]; then
-        echo "ros2 launch evo_navigation stationary_orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH}"
-      else
-        echo "ros2 launch evo_navigation stationary_orchestrator.launch.py"
-      fi
-      ;;
     reception_nav)
-      echo "ros2 launch evo_navigation orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH} mock_navigation:=false allow_real_navigation:=true navigation_timeout_sec:=${REAL_NAVIGATION_TIMEOUT_SEC} localization_timeout_sec:=${REAL_LOCALIZATION_TIMEOUT_SEC} max_localization_xy_variance:=${REAL_MAX_LOCALIZATION_XY_VARIANCE}"
+      echo "ros2 launch evo_navigation orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH} allow_real_navigation:=true navigation_timeout_sec:=${REAL_NAVIGATION_TIMEOUT_SEC} localization_timeout_sec:=${REAL_LOCALIZATION_TIMEOUT_SEC} max_localization_xy_variance:=${REAL_MAX_LOCALIZATION_XY_VARIANCE}"
       ;;
     approach)
       echo "ros2 launch evo_vision human_approach.launch.py min_confidence:=${APPROACH_MIN_CONFIDENCE} min_distance_m:=${APPROACH_MIN_DISTANCE_M} max_distance_m:=${APPROACH_MAX_DISTANCE_M} zone_min_x:=${APPROACH_ZONE_MIN_X} zone_max_x:=${APPROACH_ZONE_MAX_X} zone_min_y:=${APPROACH_ZONE_MIN_Y} zone_max_y:=${APPROACH_ZONE_MAX_Y} debounce_frames:=${APPROACH_DEBOUNCE_FRAMES} cooldown_sec:=${APPROACH_COOLDOWN_SEC} absence_reset_sec:=${APPROACH_ABSENCE_RESET_SEC}"
@@ -621,10 +664,8 @@ service_pattern() {
     camera)  echo "app_camera.launch.py" ;;
     vision)  echo "vision.launch.py" ;;
     reception) echo "reception.launch.py" ;;
-    reception_mock) echo "reception.launch.py" ;;
     voice) echo "reception_voice.launch.py" ;;
     dialogue) echo "dialogue_manager.launch.py" ;;
-    stationary_nav) echo "stationary_orchestrator.launch.py" ;;
     reception_nav) echo "orchestrator.launch.py" ;;
     approach) echo "human_approach.launch.py" ;;
     web)     echo "web_dashboard.launch.py" ;;
@@ -635,7 +676,7 @@ service_pattern() {
   esac
 }
 
-ALL_SERVICES="bringup camera vision reception reception_mock voice dialogue stationary_nav reception_nav approach web teleop slam nav"
+ALL_SERVICES="bringup camera vision reception voice dialogue reception_nav approach web teleop slam nav"
 
 # Profils = raccourcis ; un nom inconnu est renvoyé tel quel (service unique).
 expand_profile() {
@@ -644,13 +685,12 @@ expand_profile() {
     navigate) echo "bringup camera web nav"    ;;
     base)     echo "bringup camera vision web teleop" ;;   # base + caméra + vision + web
     reception) echo "bringup camera vision reception web teleop" ;;
-    camera-qr) echo "camera vision reception_mock web" ;;
-    stationary-reception) echo "camera vision reception_mock voice dialogue approach stationary_nav web" ;;
-    stationary-reception-real) echo "camera vision reception voice dialogue approach stationary_nav web" ;;
-    demo) echo "bringup camera nav vision reception voice dialogue approach stationary_nav reception_nav web" ;;
-    # Start and validate the lightweight web bridge before Nav2 and local ML
-    # models compete for Jetson CPU, memory, and disk during cold startup.
-    demo-navigation) echo "bringup camera web nav vision reception voice dialogue approach reception_nav" ;;
+    camera-qr) echo "camera vision reception web" ;;
+    demo) echo "bringup camera nav voice dialogue vision reception approach reception_nav web" ;;
+    # Start and validate the lightweight web bridge before Nav2. Load Whisper
+    # before the person detector so both local ML runtimes do not compete
+    # during cold startup on the four-core Jetson Nano.
+    demo-navigation) echo "bringup camera web nav voice dialogue vision reception approach reception_nav" ;;
     kiosk)    echo "bringup camera vision reception web teleop" ;;
     launch)   echo "bringup camera nav vision reception web" ;;
     *)        echo "$1"                         ;;
@@ -659,20 +699,98 @@ expand_profile() {
 
 validate_voice_config() {
   local container="$1"
-  if [ "$TTS_MOCK_AUDIO" = "false" ]; then
-    if [ -z "$PIPER_MODEL_PATH" ] || \
-       ! _ssh "docker exec ${container} test -f $(remote_quote "$PIPER_MODEL_PATH")"; then
-      echo "[voice] Piper model is missing in ${container}: ${PIPER_MODEL_PATH:-<not configured>}" >&2
-      return 1
-    fi
+  if [ -z "$PIPER_MODEL_PATH" ] || \
+     ! _ssh "docker exec ${container} test -f $(remote_quote "$PIPER_MODEL_PATH")"; then
+    echo "[voice] Piper model is missing in ${container}: ${PIPER_MODEL_PATH:-<not configured>}" >&2
+    return 1
   fi
-  if [ "$STT_MOCK_AUDIO" = "false" ]; then
-    if [ -z "$STT_MODEL_PATH" ] || \
-       ! _ssh "docker exec ${container} test -s $(remote_quote "${STT_MODEL_PATH}/model.bin")"; then
-      echo "[voice] Faster-Whisper model.bin is missing in ${container}: ${STT_MODEL_PATH:-<not configured>}" >&2
-      return 1
-    fi
+  if [ -z "$STT_MODEL_PATH" ] || \
+     ! _ssh "docker exec ${container} test -s $(remote_quote "${STT_MODEL_PATH}/model.bin")"; then
+    echo "[voice] Faster-Whisper model.bin is missing in ${container}: ${STT_MODEL_PATH:-<not configured>}" >&2
+    return 1
   fi
+  if [ "$WEBRTC_MIC_ENABLED" = "true" ] && [ "$MICROPHONE_DEVICE" != "-1" ]; then
+    echo "[voice] WebRTC capture must use MICROPHONE_DEVICE=-1 (the stable PulseAudio default); numeric PyAudio indices change across restarts." >&2
+    return 1
+  fi
+}
+
+wait_for_voice_ready() {
+  local container="$1" remote_env
+  echo "[voice] waiting for real microphone and Piper backends"
+  remote_env="CONTAINER=$(remote_quote "$container") \
+ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
+FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+DOCKER_WS=$(remote_quote "$DOCKER_WS") \
+AUDIO_OUTPUT_DEVICE=$(remote_quote "$AUDIO_OUTPUT_DEVICE") \
+ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+run_ros() {
+  docker exec \
+    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+    -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+    "$CONTAINER" bash -lc "${ROS_SETUP}; $1"
+}
+
+if ! docker exec "$CONTAINER" test -s "$DOCKER_WS/install/.evo-source-revision"; then
+  echo "[voice] missing build revision marker; run ./scripts/robot.sh setup" >&2
+  exit 1
+fi
+current_revision="$(
+  docker exec "$CONTAINER" bash -lc \
+    "cd '$DOCKER_WS' && find src -type d \\( -name __pycache__ -o -name .pytest_cache \\) -prune -o -type f ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum | sha256sum"
+)"
+built_revision="$(docker exec "$CONTAINER" cat "$DOCKER_WS/install/.evo-source-revision")"
+if [ "$current_revision" != "$built_revision" ]; then
+  echo "[voice] source differs from the installed workspace; run ./scripts/robot.sh setup" >&2
+  exit 1
+fi
+
+default_sink="$(pactl info | awk -F': ' '/^Default Sink:/{print $2}')"
+default_source="$(pactl info | awk -F': ' '/^Default Source:/{print $2}')"
+if [ -z "$default_sink" ] || [ -z "$default_source" ]; then
+  echo "[voice] PulseAudio default sink/source is unavailable on the Jetson host" >&2
+  exit 1
+fi
+if [[ "$AUDIO_OUTPUT_DEVICE" == pulse/* ]]; then
+  requested_sink="${AUDIO_OUTPUT_DEVICE#pulse/}"
+  if ! pactl list short sinks | awk -v sink="$requested_sink" '$2 == sink { found=1 } END { exit !found }'; then
+    echo "[voice] configured PulseAudio sink is unavailable: ${requested_sink}" >&2
+    exit 1
+  fi
+fi
+audio_devices="$(docker exec "$CONTAINER" mpv --no-config --audio-device=help 2>&1)"
+if [ -n "$AUDIO_OUTPUT_DEVICE" ] && ! grep -Fq "'${AUDIO_OUTPUT_DEVICE}'" <<<"$audio_devices"; then
+  echo "[voice] mpv cannot see configured audio device: ${AUDIO_OUTPUT_DEVICE}" >&2
+  exit 1
+fi
+if ! grep -q "'pulse/" <<<"$audio_devices"; then
+  echo "[voice] container mpv cannot reach the host PulseAudio server" >&2
+  exit 1
+fi
+
+tts_ready="$(
+  run_ros "timeout -k 2s 120s ros2 topic echo /voice/tts/diagnostics std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable"
+)"
+case "$tts_ready" in
+  *'"event": "ready"'*'"backend": "piper"'*) ;;
+  *) echo "[voice] TTS did not report the real Piper backend: ${tts_ready}" >&2; exit 1 ;;
+esac
+
+stt_ready="$(
+  run_ros "timeout -k 2s 120s ros2 topic echo /voice/stt/status std_msgs/msg/String --once --qos-durability transient_local --qos-reliability reliable"
+)"
+case "$stt_ready" in
+  *"data: idle"*) ;;
+  *) echo "[voice] STT did not open the real microphone: ${stt_ready:-no status}" >&2; exit 1 ;;
+esac
+
+echo "[voice] ready: Piper, Faster-Whisper, microphone, PulseAudio, and build revision verified"
+REMOTE_SCRIPT
 }
 
 ensure_webrtc_microphone() {
@@ -774,20 +892,26 @@ REMOTE_SCRIPT
 # remote_quote (env) + printf %q (commande docker) côté distant : robuste face aux args
 # ROS (`:=`), aux espaces et au sourcing multi-ligne — fini les quotes imbriquées.
 start_service() {
-  local name="$1" container="$2" cmd remote_env
+  local name="$1" container="$2" cmd remote_env probe_status
   if [ "$name" = "teleop" ] && \
-     _ssh "tmux has-session -t evo_nav 2>/dev/null || tmux has-session -t evo_slam 2>/dev/null"; then
+     _ssh_test "tmux has-session -t evo_nav 2>/dev/null || tmux has-session -t evo_slam 2>/dev/null"; then
     echo "[start] teleop velocity pipeline is already provided by the active Nav2/SLAM service"
     return 0
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
   if { [ "$name" = "nav" ] || [ "$name" = "slam" ]; } && \
-     _ssh "tmux has-session -t evo_teleop 2>/dev/null"; then
+     _ssh_test "tmux has-session -t evo_teleop 2>/dev/null"; then
     echo "[start] replacing the standalone teleop pipeline with ${name}"
     stop_service teleop "$container"
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
-  if _ssh "tmux has-session -t evo_${name} 2>/dev/null"; then
+  if _ssh_test "tmux has-session -t evo_${name} 2>/dev/null"; then
     echo "[start] evo_${name} already running"
     return 0
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
   if [ "$name" = "web" ]; then
     require_web_port_available "$container" || return 1
@@ -837,82 +961,6 @@ echo "[start] persistent log: ${log_file}"
 REMOTE_SCRIPT
 }
 
-# A live tmux session does not prove that Fast DDS discovery works. This check
-# reads the dialogue manager's transient-local status and verifies the
-# orchestrator's non-overridable stationary safety parameters.
-wait_for_stationary_reception_ready() {
-  local container="$1" profile="$2" expected_backend_mock remote_env
-  if [ "$profile" = "stationary-reception-real" ]; then
-    expected_backend_mock=false
-  else
-    expected_backend_mock=true
-  fi
-  echo "[stationary] waiting for workflow and forced-mock navigation"
-  remote_env="CONTAINER=$(remote_quote "$container") \
-EXPECTED_BACKEND_MOCK=$(remote_quote "$expected_backend_mock") \
-ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
-FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
-ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
-  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
-set -euo pipefail
-
-run_ros() {
-  docker exec \
-    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; $1"
-}
-
-if ! run_ros "timeout -k 2s 15s ros2 topic echo /reception/workflow/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] /reception/workflow/status was not received." >&2
-  echo "[stationary] ROS discovery may be stale; stop the profile and restart the evo-ros container before retrying." >&2
-  exit 1
-fi
-if ! run_ros "timeout -k 2s 180s ros2 topic echo /voice/tts/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] TTS did not finish loading or pre-generating phrases." >&2
-  echo "[stationary] Inspect: ./scripts/robot.sh logs voice" >&2
-  exit 1
-fi
-if ! run_ros "timeout -k 2s 60s ros2 topic echo /voice/stt/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] STT did not finish loading its local model." >&2
-  echo "[stationary] Inspect: ./scripts/robot.sh logs voice" >&2
-  exit 1
-fi
-
-mock_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node mock_navigation")"
-allow_real_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node allow_real_navigation")"
-backend_mock="$(run_ros "timeout -k 2s 8s ros2 param get /qr_reservation_bridge_node mock_mode")"
-nodes="$(run_ros "timeout -k 2s 10s ros2 node list --no-daemon --spin-time 2")"
-for node in /qr_scanner_node /qr_reservation_bridge_node /tts_node /stt_node /intent_detector_node /dialogue_manager_node /human_approach_node /navigation_orchestrator_node; do
-  node_count="$(printf '%s\n' "$nodes" | grep -cx "$node" || true)"
-  if [ "$node_count" -eq 0 ]; then
-    echo "[stationary] required node is missing: ${node}" >&2
-    exit 1
-  fi
-  if [ "$node_count" -ne 1 ]; then
-    echo "[stationary] duplicate required node detected: ${node} (${node_count})" >&2
-    echo "[stationary] stop all services and restart the ROS container." >&2
-    exit 1
-  fi
-done
-case "$mock_navigation" in
-  *"Boolean value is: True"*) ;;
-  *) echo "[stationary] mock_navigation is not true: ${mock_navigation}" >&2; exit 1 ;;
-esac
-case "$allow_real_navigation" in
-  *"Boolean value is: False"*) ;;
-  *) echo "[stationary] allow_real_navigation is not false: ${allow_real_navigation}" >&2; exit 1 ;;
-esac
-case "$EXPECTED_BACKEND_MOCK:$backend_mock" in
-  true:*"Boolean value is: True"*) ;;
-  false:*"Boolean value is: False"*) ;;
-  *) echo "[stationary] reservation backend mode mismatch: ${backend_mock}" >&2; exit 1 ;;
-esac
-
-echo "[stationary] ready: workflow available, backend_mock=${EXPECTED_BACKEND_MOCK}, mock navigation forced"
-REMOTE_SCRIPT
-}
-
 wait_for_real_reception_navigation_ready() {
   local container="$1" remote_env
   echo "[demo] waiting for Home map, AMCL, E-stop, and real reception navigation"
@@ -931,12 +979,7 @@ run_ros() {
     "$CONTAINER" bash -lc "${ROS_SETUP}; $1"
 }
 
-mock_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node mock_navigation")"
 allow_real_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node allow_real_navigation")"
-case "$mock_navigation" in
-  *"Boolean value is: False"*) ;;
-  *) echo "[demo] real orchestrator still has mock_navigation enabled: ${mock_navigation}" >&2; exit 1 ;;
-esac
 case "$allow_real_navigation" in
   *"Boolean value is: True"*) ;;
   *) echo "[demo] real navigation authorization is not active: ${allow_real_navigation}" >&2; exit 1 ;;
@@ -1087,7 +1130,8 @@ topic_count() {
   docker exec \
     -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
     -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info ${topic} 2>/dev/null" \
+    "$CONTAINER" bash -lc \
+    "${ROS_SETUP}; timeout -k 1s 4s ros2 topic info --no-daemon --spin-time 2 ${topic} 2>/dev/null" \
     | awk -v label="$kind count:" '$0 ~ label {print $3}'
 }
 
@@ -1152,108 +1196,32 @@ REMOTE_SCRIPT
 # session only proves that ros2 launch is alive; lifecycle configuration can
 # still have failed while leaving every process present in the ROS graph.
 wait_for_navigation_ready() {
-  local container="$1" remote_env
+  local container="$1" remote_env collision_arg
   echo "[nav] waiting for Nav2 lifecycle nodes and velocity routing"
   echo "[nav] set the verified initial pose in the dashboard if AMCL has not been initialized"
+  collision_arg=""
+  if [ "$NAV_USE_COLLISION_MONITOR" = "true" ]; then
+    collision_arg="--require-collision-monitor"
+  fi
   remote_env="CONTAINER=$(remote_quote "$container") \
 ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
 FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
-NAV_USE_COLLISION_MONITOR=$(remote_quote "$NAV_USE_COLLISION_MONITOR") \
+COLLISION_ARG=$(remote_quote "$collision_arg") \
 ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
   _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
-nodes="map_server amcl controller_server smoother_server planner_server behavior_server bt_navigator waypoint_follower velocity_smoother global_costmap/global_costmap"
-if [ "$NAV_USE_COLLISION_MONITOR" = "true" ]; then
-  nodes="${nodes} collision_monitor"
+if docker exec \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  "$CONTAINER" bash -lc \
+  "${ROS_SETUP}; ros2 run evo_navigation nav_readiness_checker \
+    --timeout-sec 115 --progress-sec 10 ${COLLISION_ARG}"; then
+  echo "[nav] ready: lifecycle active, map and validator available, single safe /cmd_vel publisher"
+  exit 0
 fi
-deadline=$((SECONDS + 120))
-next_progress=$SECONDS
-lifecycle_state="starting"
-publishers=0
-map_publishers=0
-costmap_ready=no
-validator_ready=no
-cmd_vel_publishers=0
-while (( SECONDS < deadline )); do
-  ready=true
-  lifecycle_state=active
-  for node in $nodes; do
-    state="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 lifecycle get /${node} 2>/dev/null" || true)"
-    case "$state" in
-      active*) ;;
-      *)
-        ready=false
-        lifecycle_state="/${node}: ${state:-unavailable}"
-        break
-        ;;
-    esac
-  done
 
-  if [ "$ready" = true ]; then
-    publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /cmd_vel_nav_raw 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    map_publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /map 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    costmap_ready="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc \
-      "${ROS_SETUP}; timeout -k 1s 3s ros2 topic echo /global_costmap/costmap --once \
-        --field header --qos-reliability reliable \
-        --qos-durability transient_local >/dev/null 2>&1 && echo yes" \
-      || true)"
-    validator_ready="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc \
-      "${ROS_SETUP}; ros2 node list 2>/dev/null | grep -qx /navigation_goal_validator && echo yes" \
-      || true)"
-    cmd_vel_publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /cmd_vel 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    if [ "${publishers:-0}" -gt 0 ] && \
-       [ "${map_publishers:-0}" -gt 0 ] && \
-       [ "$costmap_ready" = "yes" ] && \
-       [ "${cmd_vel_publishers:-0}" -eq 1 ] && \
-       [ "$validator_ready" = "yes" ]; then
-      echo "[nav] ready: lifecycle active, live costmap and validator available, single safe /cmd_vel publisher"
-      exit 0
-    fi
-  fi
-
-  if (( SECONDS >= next_progress )); then
-    remaining=$((deadline - SECONDS))
-    (( remaining < 0 )) && remaining=0
-    echo "[nav] still waiting (${remaining}s): lifecycle=${lifecycle_state}; map=${map_publishers:-0}; costmap=${costmap_ready:-no}; validator=${validator_ready:-no}; cmd_vel_nav_raw=${publishers:-0}; cmd_vel=${cmd_vel_publishers:-0}"
-    next_progress=$((SECONDS + 10))
-  fi
-  sleep 1
-done
-
-echo "[nav] startup failed: Nav2 did not become ready within 120 seconds" >&2
-echo "  last readiness state: lifecycle=${lifecycle_state}; map=${map_publishers:-0}; costmap=${costmap_ready:-no}; validator=${validator_ready:-no}; cmd_vel_nav_raw=${publishers:-0}; cmd_vel=${cmd_vel_publishers:-0}" >&2
-for node in $nodes; do
-  printf "  %-36s " "/${node}"
-  docker exec \
-    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 lifecycle get /${node} 2>/dev/null" \
-    || echo "unavailable"
-done
-echo "  /global_costmap/costmap must publish a complete OccupancyGrid message." >&2
-echo "  Check its publisher and data rate inside the ROS container if unavailable." >&2
+echo "[nav] startup failed: Nav2 did not become ready within 115 seconds" >&2
 echo "Inspect: ./scripts/robot.sh logs nav" >&2
 exit 1
 REMOTE_SCRIPT

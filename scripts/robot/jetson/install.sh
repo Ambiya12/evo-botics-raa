@@ -69,9 +69,9 @@ if [[ ! "$microros_disable_shm" =~ ^[01]$ ]]; then
 fi
 
 mkdir -p "$backup_dir"
-for file in evo-ros-start.sh evo-mcu-healthcheck.sh; do
-  [ ! -e "${home_dir}/${file}" ] || cp -a "${home_dir}/${file}" "$backup_dir/"
-done
+if [ -e "${home_dir}/evo-ros-start.sh" ]; then
+  cp -a "${home_dir}/evo-ros-start.sh" "$backup_dir/"
+fi
 [ ! -e "${home_dir}/.config/autostart/uros.desktop" ] ||
   cp -a "${home_dir}/.config/autostart/uros.desktop" "$backup_dir/"
 [ ! -e "${home_dir}/.config/autostart/start.desktop" ] ||
@@ -89,7 +89,6 @@ sudo test ! -e /etc/default/evo-micro-ros-agent ||
 sudo systemd-analyze verify "${script_dir}/evo-micro-ros-agent.service"
 
 install -m 0755 "${script_dir}/evo-ros-start.sh" "${home_dir}/evo-ros-start.sh"
-install -m 0755 "${script_dir}/evo-mcu-healthcheck.sh" "${home_dir}/evo-mcu-healthcheck.sh"
 mkdir -p "${home_dir}/.config/autostart"
 install -m 0644 "${script_dir}/evo-ros.desktop" "${home_dir}/.config/autostart/uros.desktop"
 docker cp "${script_dir}/evo-ros-entrypoint.sh" "${container}:/root/joy.sh"
