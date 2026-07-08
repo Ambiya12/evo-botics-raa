@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import json
 import shutil
@@ -12,6 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from evo_voice._utils import coerce_path
 from evo_voice.phrases import PhraseBook, PhraseConfigurationError
 from evo_voice.tts_queue import (
     PiperSpeechPlayer,
@@ -19,6 +21,47 @@ from evo_voice.tts_queue import (
     SpeakRequest,
     SpeechProcessError,
 )
+
+
+@dataclass(frozen=True)
+class TtsConfig:
+    model_path: Path
+    output_path: Path
+    cache_directory: Path
+    piper_executable: str
+    audio_player_executable: str
+    audio_output_device: str
+    synthesis_timeout_sec: float
+    playback_timeout_sec: float
+
+    def validate(self) -> None:
+        errors: list[str] = []
+        if self.model_path == Path():
+            errors.append("'piper_model_path' is required")
+        elif not self.model_path.is_file():
+            errors.append(f"'piper_model_path' does not exist: {self.model_path}")
+        if not self.output_path.name:
+            errors.append("'output_path' must name a file")
+        elif not self.output_path.parent.is_dir():
+            errors.append(f"'output_path' parent does not exist: {self.output_path.parent}")
+        if not self.cache_directory.name:
+            errors.append("'cache_directory' must name a directory")
+        if self.synthesis_timeout_sec <= 0.0:
+            errors.append("'synthesis_timeout_sec' must be greater than zero")
+        if self.playback_timeout_sec <= 0.0:
+            errors.append("'playback_timeout_sec' must be greater than zero")
+        for parameter, executable in (
+            ("piper_executable", self.piper_executable),
+            ("audio_player_executable", self.audio_player_executable),
+        ):
+            if not executable:
+                errors.append(f"'{parameter}' must not be empty")
+            elif shutil.which(executable) is None:
+                errors.append(f"executable configured by '{parameter}' was not found")
+        if errors:
+            raise TtsConfigurationError(
+                "Invalid evo_voice TTS configuration: " + "; ".join(errors)
+            )
 
 
 class TtsConfigurationError(ValueError):
@@ -40,8 +83,29 @@ class TtsNode(Node):
                 "diagnostics_topic", "/voice/tts/diagnostics"
             ).value
         )
-        model_path = _path(self.declare_parameter("piper_model_path", "").value)
-        phrase_config_path = _path(
+        config = TtsConfig(
+            model_path=coerce_path(self.declare_parameter("piper_model_path", "").value),
+            output_path=coerce_path(
+                self.declare_parameter(
+                    "output_path",
+                    str(Path(tempfile.gettempdir()) / "evo_voice_tts.wav"),
+                ).value
+            ),
+            cache_directory=coerce_path(
+                self.declare_parameter(
+                    "cache_directory",
+                    str(Path(tempfile.gettempdir()) / "evo_voice_tts_cache"),
+                ).value
+            ),
+            piper_executable=str(self.declare_parameter("piper_executable", "piper").value).strip(),
+            audio_player_executable=str(self.declare_parameter("audio_player_executable", "mpv").value).strip(),
+            audio_output_device=str(self.declare_parameter("audio_output_device", "").value).strip(),
+            synthesis_timeout_sec=float(self.declare_parameter("synthesis_timeout_sec", 30.0).value),
+            playback_timeout_sec=float(self.declare_parameter("playback_timeout_sec", 30.0).value),
+        )
+        config.validate()
+
+        phrase_config_path = coerce_path(
             self.declare_parameter(
                 "phrase_config_path",
                 str(
@@ -51,46 +115,21 @@ class TtsNode(Node):
                 ),
             ).value
         )
-        output_path = _path(
-            self.declare_parameter(
-                "output_path",
-                str(Path(tempfile.gettempdir()) / "evo_voice_tts.wav"),
-            ).value
-        )
-        cache_directory = _path(
-            self.declare_parameter(
-                "cache_directory",
-                str(Path(tempfile.gettempdir()) / "evo_voice_tts_cache"),
-            ).value
-        )
-        piper_executable = str(
-            self.declare_parameter("piper_executable", "piper").value
-        ).strip()
-        audio_player_executable = str(
-            self.declare_parameter("audio_player_executable", "mpv").value
-        ).strip()
-        audio_output_device = str(
-            self.declare_parameter("audio_output_device", "").value
-        ).strip()
-        synthesis_timeout_sec = float(
-            self.declare_parameter("synthesis_timeout_sec", 30.0).value
-        )
-        playback_timeout_sec = float(
-            self.declare_parameter("playback_timeout_sec", 30.0).value
-        )
-
         self.phrase_book = PhraseBook.from_yaml(phrase_config_path)
-        self.audio_output_device = audio_output_device
+        self.audio_output_device = config.audio_output_device
         self.request_counter = 0
-        player = self._create_player(
-            model_path,
-            output_path,
-            piper_executable,
-            audio_player_executable,
-            audio_output_device,
-            cache_directory,
-            synthesis_timeout_sec,
-            playback_timeout_sec,
+
+        player = PiperSpeechPlayer(
+            model_path=config.model_path,
+            output_path=config.output_path,
+            piper_executable=config.piper_executable,
+            audio_player_executable=config.audio_player_executable,
+            audio_output_device=config.audio_output_device,
+            cache_directory=config.cache_directory,
+            prewarm_texts=(self.phrase_book.resolve_request("phrase:greeting"),),
+            synthesis_timeout_sec=config.synthesis_timeout_sec,
+            playback_timeout_sec=config.playback_timeout_sec,
+            latency_callback=self.log_latency,
         )
 
         status_qos = QoSProfile(
@@ -111,65 +150,11 @@ class TtsNode(Node):
         self.publish_diagnostic(
             "ready",
             backend="piper",
-            audio_output_device=audio_output_device or "system-default",
+            audio_output_device=config.audio_output_device or "system-default",
         )
         self.get_logger().info(
             f"Queued TTS ready: request={request_topic} status={status_topic} "
-            f"audio_output_device={audio_output_device or '<system-default>'}"
-        )
-
-    def _create_player(
-        self,
-        model_path: Path,
-        output_path: Path,
-        piper_executable: str,
-        audio_player_executable: str,
-        audio_output_device: str,
-        cache_directory: Path,
-        synthesis_timeout_sec: float,
-        playback_timeout_sec: float,
-    ):
-        errors: list[str] = []
-        if model_path == Path():
-            errors.append("'piper_model_path' is required")
-        elif not model_path.is_file():
-            errors.append(f"'piper_model_path' does not exist: {model_path}")
-        if not output_path.name:
-            errors.append("'output_path' must name a file")
-        elif not output_path.parent.is_dir():
-            errors.append(f"'output_path' parent does not exist: {output_path.parent}")
-        if not cache_directory.name:
-            errors.append("'cache_directory' must name a directory")
-        if synthesis_timeout_sec <= 0.0:
-            errors.append("'synthesis_timeout_sec' must be greater than zero")
-        if playback_timeout_sec <= 0.0:
-            errors.append("'playback_timeout_sec' must be greater than zero")
-        for parameter, executable in (
-            ("piper_executable", piper_executable),
-            ("audio_player_executable", audio_player_executable),
-        ):
-            if not executable:
-                errors.append(f"'{parameter}' must not be empty")
-            elif shutil.which(executable) is None:
-                errors.append(f"executable configured by '{parameter}' was not found")
-        if errors:
-            raise TtsConfigurationError(
-                "Invalid evo_voice TTS configuration: " + "; ".join(errors)
-            )
-
-        return PiperSpeechPlayer(
-            model_path=model_path,
-            output_path=output_path,
-            piper_executable=piper_executable,
-            audio_player_executable=audio_player_executable,
-            audio_output_device=audio_output_device,
-            cache_directory=cache_directory,
-            prewarm_texts=(
-                self.phrase_book.resolve_request("phrase:greeting"),
-            ),
-            synthesis_timeout_sec=synthesis_timeout_sec,
-            playback_timeout_sec=playback_timeout_sec,
-            latency_callback=self.log_latency,
+            f"audio_output_device={config.audio_output_device or '<system-default>'}"
         )
 
     def on_speak_request(self, message: String) -> None:
@@ -238,11 +223,6 @@ class TtsNode(Node):
     def destroy_node(self) -> bool:
         self.tts_queue.shutdown()
         return super().destroy_node()
-
-
-def _path(value: object) -> Path:
-    text = str(value).strip()
-    return Path(text).expanduser() if text else Path()
 
 
 def main(args=None) -> None:

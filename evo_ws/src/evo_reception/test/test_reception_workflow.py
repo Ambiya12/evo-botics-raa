@@ -188,3 +188,18 @@ def test_return_failure_enters_safe_error_state() -> None:
 
     assert manager.state == DialogueState.ERROR
     assert transition.speech == ("navigation_failed",)
+
+
+def test_idle_presence_greeting_after_hold() -> None:
+    manager = DialogueManager()
+
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+    assert manager.state == DialogueState.PRESENCE_ARMED
+
+    transition = manager.handle_event(
+        DialogueEvent.PRESENCE_GREETING_TIMEOUT
+    )
+
+    assert transition.accepted
+    assert transition.speech == ("greeting",)
+    assert manager.state == DialogueState.GREETING

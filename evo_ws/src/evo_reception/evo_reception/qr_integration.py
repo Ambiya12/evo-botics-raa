@@ -4,8 +4,27 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 import time
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import urlsplit
+
+
+QR_VALIDATION_OUTCOME_TO_RESPONSE: dict["QrValidationOutcome", int] = {}
+"""Lazily populated to avoid circular imports with evo_reception_interfaces."""
+
+
+def _ensure_outcome_mapping() -> dict["QrValidationOutcome", int]:
+    if QR_VALIDATION_OUTCOME_TO_RESPONSE:
+        return QR_VALIDATION_OUTCOME_TO_RESPONSE
+    from evo_reception_interfaces.srv import ValidateQr
+
+    QR_VALIDATION_OUTCOME_TO_RESPONSE.update({
+        QrValidationOutcome.VALID: ValidateQr.Response.VALID,
+        QrValidationOutcome.INVALID: ValidateQr.Response.INVALID,
+        QrValidationOutcome.EXPIRED: ValidateQr.Response.EXPIRED,
+        QrValidationOutcome.DUPLICATE: ValidateQr.Response.DUPLICATE,
+        QrValidationOutcome.UNAVAILABLE: ValidateQr.Response.UNAVAILABLE,
+    })
+    return QR_VALIDATION_OUTCOME_TO_RESPONSE
 
 
 class QrValidationOutcome(str, Enum):

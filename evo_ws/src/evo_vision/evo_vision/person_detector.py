@@ -165,3 +165,49 @@ def estimate_person_distance(
     if valid.size < minimum_samples:
         return None
     return float(np.median(valid))
+
+
+class PresenceTracker:
+    """Hold/release hysteresis for the /vision/people/presence topic.
+
+    True is published only after *hold_sec* of continuous detections; False is
+    published only after *release_sec* of continuous absence.  This prevents the
+    greeting path from flickering on momentary detection dropouts.
+    """
+
+    def __init__(self, hold_sec: float = 5.0, release_sec: float = 1.0) -> None:
+        if hold_sec < 0.0:
+            raise ValueError("hold_sec must be non-negative")
+        if release_sec < 0.0:
+            raise ValueError("release_sec must be non-negative")
+        self.hold_sec = hold_sec
+        self.release_sec = release_sec
+        self.active = False
+        self.hold_start = 0.0
+        self.release_start = 0.0
+
+    def update(self, person_seen: bool, now: float) -> bool | None:
+        """Return True / False when the published state should change, else None."""
+        if person_seen:
+            if not self.active:
+                if self.hold_start == 0.0:
+                    self.hold_start = now
+                elif (now - self.hold_start) >= self.hold_sec:
+                    self.active = True
+                    self.hold_start = 0.0
+                    self.release_start = 0.0
+                    return True
+            else:
+                self.release_start = 0.0
+        else:
+            if self.active:
+                if self.release_start == 0.0:
+                    self.release_start = now
+                elif (now - self.release_start) >= self.release_sec:
+                    self.active = False
+                    self.release_start = 0.0
+                    self.hold_start = 0.0
+                    return False
+            else:
+                self.hold_start = 0.0
+        return None

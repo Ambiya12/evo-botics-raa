@@ -4,14 +4,12 @@ import math
 from pathlib import Path
 import time
 
-from action_msgs.msg import GoalStatus
 from ament_index_python.packages import get_package_share_directory
 from evo_reception_interfaces.action import GuideToDestination
 from evo_reception_interfaces.msg import NavigationStatus
 from geometry_msgs.msg import PoseWithCovarianceStamped
-from nav2_msgs.action import NavigateToPose
 import rclpy
-from rclpy.action import ActionClient, ActionServer, CancelResponse, GoalResponse
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -19,100 +17,15 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 
 from evo_navigation.navigation_orchestrator import (
+    Nav2Navigator,
     NavigationGates,
     NavigationOrchestrator,
     NavigationOutcome,
-    NavigationResult,
     NavigationState,
     localization_is_ready,
     validate_navigation_configuration,
 )
-from evo_navigation.waypoints import Waypoint, WaypointConfigurationError, WaypointRegistry
-
-
-class Nav2Navigator:
-    def __init__(self, node: Node, action_name: str) -> None:
-        self.node = node
-        self.client = ActionClient(
-            node,
-            NavigateToPose,
-            action_name,
-            callback_group=ReentrantCallbackGroup(),
-        )
-
-    def ready(self) -> bool:
-        return self.client.wait_for_server(timeout_sec=0.0)
-
-    def navigate(
-        self,
-        waypoint: Waypoint,
-        timeout_sec: float,
-        cancelled,
-    ) -> NavigationResult:
-        goal = NavigateToPose.Goal()
-        goal.pose.header.frame_id = waypoint.frame_id
-        goal.pose.header.stamp = self.node.get_clock().now().to_msg()
-        goal.pose.pose.position.x = waypoint.x
-        goal.pose.pose.position.y = waypoint.y
-        goal.pose.pose.orientation.z = math.sin(waypoint.yaw / 2.0)
-        goal.pose.pose.orientation.w = math.cos(waypoint.yaw / 2.0)
-
-        deadline = time.monotonic() + timeout_sec
-        send_future = self.client.send_goal_async(goal)
-        while not send_future.done():
-            if cancelled() or time.monotonic() >= deadline:
-                send_future.add_done_callback(self._cancel_late_goal)
-                outcome = (
-                    NavigationOutcome.CANCELLED
-                    if cancelled()
-                    else NavigationOutcome.TIMEOUT
-                )
-                return NavigationResult(
-                    outcome, f"Navigation {outcome.value} before goal acceptance."
-                )
-            time.sleep(0.02)
-
-        goal_handle = send_future.result()
-        if goal_handle is None or not goal_handle.accepted:
-            return NavigationResult(
-                NavigationOutcome.FAILED, "Nav2 rejected the waypoint."
-            )
-
-        result_future = goal_handle.get_result_async()
-        while not result_future.done():
-            if cancelled():
-                goal_handle.cancel_goal_async()
-                return NavigationResult(
-                    NavigationOutcome.CANCELLED, "Navigation cancelled."
-                )
-            if time.monotonic() >= deadline:
-                goal_handle.cancel_goal_async()
-                return NavigationResult(
-                    NavigationOutcome.TIMEOUT, "Navigation timed out."
-                )
-            time.sleep(0.02)
-
-        wrapped_result = result_future.result()
-        if wrapped_result.status == GoalStatus.STATUS_SUCCEEDED:
-            return NavigationResult(
-                NavigationOutcome.ARRIVED, "Nav2 reached the destination."
-            )
-        if wrapped_result.status == GoalStatus.STATUS_CANCELED:
-            return NavigationResult(
-                NavigationOutcome.CANCELLED, "Nav2 navigation was cancelled."
-            )
-        return NavigationResult(
-            NavigationOutcome.FAILED, "Nav2 navigation failed."
-        )
-
-    @staticmethod
-    def _cancel_late_goal(future) -> None:
-        try:
-            goal_handle = future.result()
-            if goal_handle is not None and goal_handle.accepted:
-                goal_handle.cancel_goal_async()
-        except Exception:
-            pass
+from evo_navigation.waypoints import WaypointConfigurationError, WaypointRegistry
 
 
 class NavigationOrchestratorNode(Node):
@@ -195,7 +108,7 @@ class NavigationOrchestratorNode(Node):
         estop_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
-            durability=DurabilityPolicy.VOLATILE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
         self.create_subscription(Bool, estop_topic, self.on_estop, estop_qos)
         self.create_subscription(

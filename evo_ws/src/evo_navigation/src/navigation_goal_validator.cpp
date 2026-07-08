@@ -357,7 +357,7 @@ private:
       return false;
     }
 
-    const auto map_status = classifyMapCell(*map, goal.pose.position.x, goal.pose.position.y);
+    const auto map_status = grid_utils::classifyMapCell(*map, goal.pose.position.x, goal.pose.position.y, map_occupied_threshold_);
     if (map_status == CellStatus::Outside) {
       reason = "rejected_outside_map";
       return false;
@@ -376,7 +376,7 @@ private:
       return false;
     }
 
-    if (!hasClearance(*costmap, goal.pose.position.x, goal.pose.position.y, reason)) {
+    if (!grid_utils::hasClearance(*costmap, goal.pose.position.x, goal.pose.position.y, goal_clearance_m_, path_cost_threshold_, reason)) {
       return false;
     }
 
@@ -445,7 +445,7 @@ private:
     const double y,
     std::string & reason) const
   {
-    const auto map_status = classifyMapCell(map, x, y);
+    const auto map_status = grid_utils::classifyMapCell(map, x, y, map_occupied_threshold_);
     if (map_status == CellStatus::Outside || map_status == CellStatus::Unknown) {
       reason = "rejected_path_unknown";
       return false;
@@ -455,7 +455,7 @@ private:
       return false;
     }
 
-    const auto cost_status = classifyCostmapCell(costmap, x, y);
+    const auto cost_status = grid_utils::classifyCostmapCell(costmap, x, y, path_cost_threshold_);
     if (cost_status == CellStatus::Outside || cost_status == CellStatus::Unknown) {
       reason = "rejected_path_unknown";
       return false;
@@ -469,51 +469,6 @@ private:
   }
 
   using CellStatus = grid_utils::CellStatus;
-
-  CellStatus classifyMapCell(
-    const nav_msgs::msg::OccupancyGrid & grid, const double wx, const double wy) const
-  {
-    return grid_utils::classifyMapCell(grid, wx, wy, map_occupied_threshold_);
-  }
-
-  CellStatus classifyCostmapCell(
-    const nav_msgs::msg::OccupancyGrid & grid, const double wx, const double wy) const
-  {
-    return grid_utils::classifyCostmapCell(grid, wx, wy, path_cost_threshold_);
-  }
-
-  bool hasClearance(
-    const nav_msgs::msg::OccupancyGrid & grid,
-    const double wx,
-    const double wy,
-    std::string & reason) const
-  {
-    return grid_utils::hasClearance(
-      grid, wx, wy, goal_clearance_m_, path_cost_threshold_, reason);
-  }
-
-  bool worldToMap(
-    const nav_msgs::msg::OccupancyGrid & grid,
-    const double wx,
-    const double wy,
-    unsigned int & mx,
-    unsigned int & my) const
-  {
-    return grid_utils::worldToMap(grid, wx, wy, mx, my);
-  }
-
-  int cellValue(
-    const nav_msgs::msg::OccupancyGrid & grid,
-    const unsigned int mx,
-    const unsigned int my) const
-  {
-    return grid_utils::cellValue(grid, mx, my);
-  }
-
-  int occupancyThresholdFromCostmapThreshold() const
-  {
-    return grid_utils::occupancyThresholdFromCostmapThreshold(path_cost_threshold_);
-  }
 
   void publishStatus(const std::string & code)
   {

@@ -1,6 +1,6 @@
 # Reception waypoints measured in the Home map frame.
 frame_id: map
-hardware_validated: false
+hardware_validated: true
 
 waypoints:
   reception:

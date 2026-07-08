@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Event, Thread
 import json
@@ -12,6 +13,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 
+from evo_voice._utils import coerce_path
 from evo_voice.stt import (
     CaptureGate,
     CaptureToken,
@@ -20,6 +22,55 @@ from evo_voice.stt import (
     SttPipeline,
     WavEnergyVad,
 )
+
+
+@dataclass(frozen=True)
+class SttConfig:
+    model_path: Path
+    capture_path: Path
+    device: str
+    compute_type: str
+    language: str
+    microphone_device: int
+    listen_timeout_sec: float
+    phrase_time_limit_sec: float
+    pause_threshold_sec: float
+    non_speaking_duration_sec: float
+    vad_rms_threshold: float
+    minimum_confidence: float
+
+    def validate(self) -> None:
+        errors: list[str] = []
+        if self.language not in {"auto", "en", "fr"}:
+            errors.append("'language' must be one of: auto, en, fr")
+        if not self.device:
+            errors.append("'device' must not be empty")
+        if not self.compute_type:
+            errors.append("'compute_type' must not be empty")
+        if not self.capture_path.name:
+            errors.append("'capture_path' must name a file")
+        elif not self.capture_path.parent.is_dir():
+            errors.append(f"'capture_path' parent does not exist: {self.capture_path.parent}")
+        if not 0.0 <= self.minimum_confidence <= 1.0:
+            errors.append("'minimum_confidence' must be between 0.0 and 1.0")
+        if not 0.0 <= self.vad_rms_threshold <= 1.0:
+            errors.append("'vad_rms_threshold' must be between 0.0 and 1.0")
+        if self.microphone_device < -1:
+            errors.append("'microphone_device' must be -1 or a non-negative device index")
+        if self.listen_timeout_sec <= 0.0:
+            errors.append("'listen_timeout_sec' must be greater than zero")
+        if self.phrase_time_limit_sec <= 0.0:
+            errors.append("'phrase_time_limit_sec' must be greater than zero")
+        if self.pause_threshold_sec <= 0.0:
+            errors.append("'pause_threshold_sec' must be greater than zero")
+        if self.non_speaking_duration_sec < 0.0:
+            errors.append("'non_speaking_duration_sec' must be non-negative")
+        if self.non_speaking_duration_sec > self.pause_threshold_sec:
+            errors.append("'non_speaking_duration_sec' must not exceed 'pause_threshold_sec'")
+        if errors:
+            raise SttConfigurationError(
+                "Invalid evo_voice STT configuration: " + "; ".join(errors)
+            )
 
 
 class SttConfigurationError(ValueError):
@@ -49,72 +100,50 @@ class SttNode(Node):
                 "diagnostics_topic", "/voice/stt/diagnostics"
             ).value
         )
-        model_path = _path(self.declare_parameter("model_path", "").value)
-        device = str(self.declare_parameter("device", "cpu").value).strip()
-        compute_type = str(
-            self.declare_parameter("compute_type", "int8").value
-        ).strip()
-        language = str(
-            self.declare_parameter("language", "auto").value
-        ).strip().lower()
-        self.microphone_device = int(
-            self.declare_parameter("microphone_device", -1).value
+        config = SttConfig(
+            model_path=coerce_path(self.declare_parameter("model_path", "").value),
+            device=str(self.declare_parameter("device", "cpu").value).strip(),
+            compute_type=str(self.declare_parameter("compute_type", "int8").value).strip(),
+            language=str(self.declare_parameter("language", "auto").value).strip().lower(),
+            microphone_device=int(self.declare_parameter("microphone_device", -1).value),
+            listen_timeout_sec=float(self.declare_parameter("listen_timeout_sec", 1.0).value),
+            phrase_time_limit_sec=float(self.declare_parameter("phrase_time_limit_sec", 10.0).value),
+            pause_threshold_sec=float(self.declare_parameter("pause_threshold_sec", 0.4).value),
+            non_speaking_duration_sec=float(self.declare_parameter("non_speaking_duration_sec", 0.2).value),
+            vad_rms_threshold=float(self.declare_parameter("vad_rms_threshold", 0.01).value),
+            minimum_confidence=float(self.declare_parameter("minimum_confidence", 0.4).value),
+            capture_path=coerce_path(
+                self.declare_parameter(
+                    "capture_path",
+                    str(Path(tempfile.gettempdir()) / "evo_voice_stt.wav"),
+                ).value
+            ),
         )
-        self.listen_timeout_sec = float(
-            self.declare_parameter("listen_timeout_sec", 1.0).value
-        )
-        self.phrase_time_limit_sec = float(
-            self.declare_parameter("phrase_time_limit_sec", 10.0).value
-        )
-        self.pause_threshold_sec = float(
-            self.declare_parameter("pause_threshold_sec", 0.4).value
-        )
-        self.non_speaking_duration_sec = float(
-            self.declare_parameter("non_speaking_duration_sec", 0.2).value
-        )
-        vad_rms_threshold = float(
-            self.declare_parameter("vad_rms_threshold", 0.01).value
-        )
-        minimum_confidence = float(
-            self.declare_parameter("minimum_confidence", 0.4).value
-        )
-        capture_path = _path(
-            self.declare_parameter(
-                "capture_path",
-                str(Path(tempfile.gettempdir()) / "evo_voice_stt.wav"),
-            ).value
-        )
-        self._validate_common(
-            language,
-            device,
-            compute_type,
-            capture_path,
-            minimum_confidence,
-            vad_rms_threshold,
-            self.microphone_device,
-            self.listen_timeout_sec,
-            self.phrase_time_limit_sec,
-            self.pause_threshold_sec,
-            self.non_speaking_duration_sec,
-        )
+        config.validate()
+        self.microphone_device = config.microphone_device
+        self.listen_timeout_sec = config.listen_timeout_sec
+        self.phrase_time_limit_sec = config.phrase_time_limit_sec
+        self.pause_threshold_sec = config.pause_threshold_sec
+        self.non_speaking_duration_sec = config.non_speaking_duration_sec
+
         self.capture_gate = CaptureGate(initial_mode=ListeningMode.DISABLED)
-        if model_path == Path() or not model_path.exists():
+        if config.model_path == Path() or not config.model_path.exists():
             raise SttConfigurationError(
                 "'model_path' must reference a local Faster Whisper model"
             )
         transcriber = FasterWhisperTranscriber(
-            model_path=model_path,
-            capture_path=capture_path,
-            device=device,
-            compute_type=compute_type,
-            language=language,
+            model_path=config.model_path,
+            capture_path=config.capture_path,
+            device=config.device,
+            compute_type=config.compute_type,
+            language=config.language,
         )
 
         self.pipeline = SttPipeline(
             transcriber=transcriber,
-            vad=WavEnergyVad(vad_rms_threshold),
+            vad=WavEnergyVad(config.vad_rms_threshold),
             capture_gate=self.capture_gate,
-            minimum_confidence=minimum_confidence,
+            minimum_confidence=config.minimum_confidence,
             error_callback=self.on_transcription_error,
         )
         self.transcript_publisher = self.create_publisher(
@@ -173,64 +202,13 @@ class SttNode(Node):
             f"STT ready: transcript={transcript_topic} "
             f"status={status_topic} tts_status={tts_status_topic} "
             f"dialogue_state={dialogue_state_topic} "
-            f"microphone_device={self.microphone_device} language={language} "
-            f"vad_rms_threshold={vad_rms_threshold} "
-            f"minimum_confidence={minimum_confidence} "
+            f"microphone_device={self.microphone_device} language={config.language} "
+            f"vad_rms_threshold={config.vad_rms_threshold} "
+            f"minimum_confidence={config.minimum_confidence} "
             f"pause_threshold_sec={self.pause_threshold_sec} "
             f"non_speaking_duration_sec={self.non_speaking_duration_sec} "
             "tts_capture_suppression=enabled"
         )
-
-    @staticmethod
-    def _validate_common(
-        language: str,
-        device: str,
-        compute_type: str,
-        capture_path: Path,
-        minimum_confidence: float,
-        vad_rms_threshold: float,
-        microphone_device: int,
-        listen_timeout_sec: float,
-        phrase_time_limit_sec: float,
-        pause_threshold_sec: float,
-        non_speaking_duration_sec: float,
-    ) -> None:
-        errors: list[str] = []
-        if language not in {"auto", "en", "fr"}:
-            errors.append("'language' must be one of: auto, en, fr")
-        if not device:
-            errors.append("'device' must not be empty")
-        if not compute_type:
-            errors.append("'compute_type' must not be empty")
-        if not capture_path.name:
-            errors.append("'capture_path' must name a file")
-        elif not capture_path.parent.is_dir():
-            errors.append(f"'capture_path' parent does not exist: {capture_path.parent}")
-        if not 0.0 <= minimum_confidence <= 1.0:
-            errors.append("'minimum_confidence' must be between 0.0 and 1.0")
-        if not 0.0 <= vad_rms_threshold <= 1.0:
-            errors.append("'vad_rms_threshold' must be between 0.0 and 1.0")
-        if microphone_device < -1:
-            errors.append(
-                "'microphone_device' must be -1 or a non-negative device index"
-            )
-        if listen_timeout_sec <= 0.0:
-            errors.append("'listen_timeout_sec' must be greater than zero")
-        if phrase_time_limit_sec <= 0.0:
-            errors.append("'phrase_time_limit_sec' must be greater than zero")
-        if pause_threshold_sec <= 0.0:
-            errors.append("'pause_threshold_sec' must be greater than zero")
-        if non_speaking_duration_sec < 0.0:
-            errors.append("'non_speaking_duration_sec' must be non-negative")
-        if non_speaking_duration_sec > pause_threshold_sec:
-            errors.append(
-                "'non_speaking_duration_sec' must not exceed "
-                "'pause_threshold_sec'"
-            )
-        if errors:
-            raise SttConfigurationError(
-                "Invalid evo_voice STT configuration: " + "; ".join(errors)
-            )
 
     def on_tts_status(self, message: String) -> None:
         self.capture_gate.update_tts_status(message.data)
@@ -376,11 +354,6 @@ class SttNode(Node):
         if self.capture_thread is not None:
             self.capture_thread.join(timeout=2.0)
         return super().destroy_node()
-
-
-def _path(value: object) -> Path:
-    text = str(value).strip()
-    return Path(text).expanduser() if text else Path()
 
 
 def main(args=None) -> None:

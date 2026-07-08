@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""
-Minimal ROS2 node that serves the web dashboard over HTTP.
+"""Minimal ROS2 node that serves the web dashboard over HTTP."""
 
-It serves static files from the package's web/ directory and also provides
-a /camera/snapshot endpoint that returns the latest camera frame as JPEG.
-This avoids sending raw images through rosbridge (which is slow).
-
-Usage:
-  ros2 run evo_web web_server_node
-  ros2 run evo_web web_server_node --ros-args -p port:=8080
-"""
 import json
 import time
 import threading
 from functools import partial
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
+from typing import Optional
 
 import rclpy
 from rclpy.node import Node
@@ -28,6 +20,9 @@ try:
     HAS_CV2 = True
 except ImportError:
     HAS_CV2 = False
+
+if HAS_CV2:
+    from evo_vision.image_utils import color_image_to_bgr_respecting_step
 
 
 class CameraSnapshotHandler(SimpleHTTPRequestHandler):
@@ -188,83 +183,26 @@ class WebServerNode(Node):
         self.http_thread.start()
         self.get_logger().info(f"Web dashboard: http://0.0.0.0:{self.port}")
 
-    def on_image(self, msg: Image):
-        """Convert ROS Image to JPEG and cache it."""
+    def on_image(self, msg: Image) -> None:
         self.received_frame_count += 1
         self.last_frame_time = time.time()
         self.last_frame_encoding = msg.encoding
         try:
             now = time.monotonic()
-            if self.max_fps > 0 and now - self.last_encode_time < 1.0 / self.max_fps:
+            if not self._should_encode(now):
                 return
             self.last_encode_time = now
 
-            encoding = msg.encoding.lower().replace("-", "_")
-            h, w = msg.height, msg.width
-            if h <= 0 or w <= 0:
-                raise ValueError(f"invalid image size {w}x{h}")
+            arr = self._decode_frame(msg)
+            if arr is None:
+                return
+            arr = self._resize_if_needed(arr, msg.width, msg.height)
+            jpeg = self._encode_to_jpeg(arr)
+            if jpeg is None:
+                return
 
-            channels_by_encoding = {
-                "rgb8": 3,
-                "bgr8": 3,
-                "rgba8": 4,
-                "bgra8": 4,
-                "mono8": 1,
-                "8uc1": 1,
-                "yuv422": 2,
-                "yuv422_yuy2": 2,
-                "yuyv": 2,
-                "uyvy": 2,
-            }
-            channels = channels_by_encoding.get(encoding)
-            if channels is None:
-                raise ValueError(f"unsupported image encoding {msg.encoding!r}")
-
-            packed_row_bytes = w * channels
-            row_bytes = int(msg.step) if msg.step else packed_row_bytes
-            if row_bytes < packed_row_bytes:
-                raise ValueError(
-                    f"image step {row_bytes} is smaller than {packed_row_bytes}"
-                )
-
-            data = np.frombuffer(bytes(msg.data), dtype=np.uint8)
-            required_bytes = h * row_bytes
-            if data.size < required_bytes:
-                raise ValueError(
-                    f"image payload has {data.size} bytes; expected at least {required_bytes}"
-                )
-
-            # ROS Image.step may include row padding. Slice it away before
-            # reshaping so valid camera frames are not silently discarded.
-            packed = data[:required_bytes].reshape(h, row_bytes)[:, :packed_row_bytes]
-            if channels == 1:
-                arr = packed.reshape(h, w)
-            else:
-                arr = packed.reshape(h, w, channels)
-
-            if encoding == "rgb8":
-                arr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
-            elif encoding == "rgba8":
-                arr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGR)
-            elif encoding == "bgra8":
-                arr = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
-            elif encoding in ("yuv422", "yuv422_yuy2", "yuyv"):
-                arr = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUY2)
-            elif encoding == "uyvy":
-                arr = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_UYVY)
-
-            if self.max_width > 0 and w > self.max_width:
-                scale = self.max_width / float(w)
-                arr = cv2.resize(arr, (self.max_width, int(h * scale)))
-
-            quality = max(30, min(95, self.jpeg_quality))
-            encoded, jpeg_buf = cv2.imencode(
-                ".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, quality]
-            )
-            if not encoded:
-                raise ValueError("OpenCV failed to encode the camera frame")
             with self.jpeg_lock:
-                self.latest_jpeg = jpeg_buf.tobytes()
+                self.latest_jpeg = jpeg
                 self.latest_jpeg_seq += 1
                 self.encoded_frame_count += 1
                 self.last_camera_error = None
@@ -276,6 +214,36 @@ class WebServerNode(Node):
                     f"Camera frame rejected on {self.camera_topic}: {exc}"
                 )
                 self.last_error_log_time = now
+
+    def _should_encode(self, now: float) -> bool:
+        if self.max_fps <= 0:
+            return True
+        return now - self.last_encode_time >= 1.0 / self.max_fps
+
+    def _decode_frame(self, msg: Image) -> Optional[np.ndarray]:
+        if not HAS_CV2:
+            return None
+        if msg.height <= 0 or msg.width <= 0:
+            raise ValueError(f"invalid image size {msg.width}x{msg.height}")
+        arr = color_image_to_bgr_respecting_step(msg)
+        if arr is None:
+            raise ValueError(f"unsupported image encoding {msg.encoding!r}")
+        return arr
+
+    def _resize_if_needed(self, arr: np.ndarray, w: int, h: int) -> np.ndarray:
+        if self.max_width > 0 and w > self.max_width:
+            scale = self.max_width / float(w)
+            return cv2.resize(arr, (self.max_width, int(h * scale)))
+        return arr
+
+    def _encode_to_jpeg(self, arr: np.ndarray) -> Optional[bytes]:
+        quality = max(30, min(95, self.jpeg_quality))
+        encoded, jpeg_buf = cv2.imencode(
+            ".jpg", arr, [cv2.IMWRITE_JPEG_QUALITY, quality]
+        )
+        if not encoded:
+            raise ValueError("OpenCV failed to encode the camera frame")
+        return jpeg_buf.tobytes()
 
     def get_jpeg(self):
         with self.jpeg_lock:

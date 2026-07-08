@@ -27,6 +27,7 @@ setup(
             "reception_metrics = evo_voice.reliability_metrics:main",
             "stt_node = evo_voice.stt_node:main",
             "tts_node = evo_voice.tts_node:main",
+            "voice_readiness_checker = evo_voice.readiness_checker:main",
         ],
     },
 )

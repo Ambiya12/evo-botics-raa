@@ -10,13 +10,19 @@ from evo_reception_interfaces.msg import PersonDetection
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 from evo_vision.image_utils import color_image_to_bgr, depth_image_to_meters
 from evo_vision.person_detector import (
     LetterboxTransform,
+    PresenceTracker,
     decode_yolov5_people,
     estimate_person_distance,
     non_max_suppression,
@@ -79,6 +85,22 @@ class ObjectDetectorNode(Node):
         self.max_depth_m = float(
             self.declare_parameter("max_depth_m", 5.0).value
         )
+        self.presence_topic = str(
+            self.declare_parameter(
+                "presence_topic", "/vision/people/presence"
+            ).value
+        )
+        self.presence_hold_sec = float(
+            self.declare_parameter("presence_hold_sec", 5.0).value
+        )
+        self.presence_release_sec = float(
+            self.declare_parameter("presence_release_sec", 1.0).value
+        )
+        self.health_topic = str(
+            self.declare_parameter(
+                "health_topic", "/vision/people/health"
+            ).value
+        )
         self._validate_configuration()
 
         try:
@@ -95,16 +117,44 @@ class ObjectDetectorNode(Node):
         self.latest_depth_received_at = 0.0
         self.last_inference_at = 0.0
         self.last_status = ""
+        self.presence_tracker = PresenceTracker(
+            hold_sec=self.presence_hold_sec,
+            release_sec=self.presence_release_sec,
+        )
+        self.last_detection_at = 0.0
+        self._inference_times: list[float] = []
+        self._depth_sync_ok = False
+        self._model_loaded = True
 
         self.detection_publisher = self.create_publisher(
             PersonDetection,
             self.detections_topic,
             10,
         )
+        status_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
         self.status_publisher = self.create_publisher(
             String,
             self.status_topic,
-            10,
+            status_qos,
+        )
+        presence_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.presence_publisher = self.create_publisher(
+            Bool,
+            self.presence_topic,
+            presence_qos,
+        )
+        self.health_publisher = self.create_publisher(
+            String,
+            self.health_topic,
+            presence_qos,
         )
         self.create_subscription(
             Image,
@@ -167,12 +217,18 @@ class ObjectDetectorNode(Node):
         if now - self.last_inference_at < 1.0 / self.max_fps:
             return
         self.last_inference_at = now
+        self._inference_times.append(now)
+        self._depth_sync_ok = (
+            self.latest_depth is not None
+            and now - self.latest_depth_received_at <= self.depth_timeout_sec
+        )
 
         if (
             self.latest_depth is None
             or now - self.latest_depth_received_at > self.depth_timeout_sec
         ):
             self.publish_status("waiting_for_depth", "Fresh depth data is required.")
+            self.publish_health()
             return
         color_stamp = self._stamp_seconds(message)
         if (
@@ -181,11 +237,14 @@ class ObjectDetectorNode(Node):
             and abs(color_stamp - self.latest_depth_stamp)
             > self.depth_sync_tolerance_sec
         ):
+            self._depth_sync_ok = False
             self.publish_status(
                 "depth_out_of_sync",
                 "Color and depth frames are outside the synchronization tolerance.",
             )
+            self.publish_health()
             return
+        self._depth_sync_ok = True
 
         image = color_image_to_bgr(message)
         if image is None:
@@ -193,6 +252,7 @@ class ObjectDetectorNode(Node):
                 "color_error",
                 f"Unsupported color encoding: {message.encoding}",
             )
+            self.publish_health()
             return
 
         try:
@@ -211,11 +271,14 @@ class ObjectDetectorNode(Node):
         except (cv2.error, ValueError) as exc:
             self.get_logger().error(f"Person inference failed: {exc}")
             self.publish_status("inference_error", "Person inference failed.")
+            self.publish_health()
             return
 
         primary = select_primary_person(detections)
         if primary is None:
+            self._update_presence(False, now)
             self.publish_status("active", "No person detected.")
+            self.publish_health()
             return
         distance_m = estimate_person_distance(
             self.latest_depth,
@@ -231,6 +294,7 @@ class ObjectDetectorNode(Node):
                 "depth_unavailable",
                 "Person detected without a reliable depth measurement.",
             )
+            self.publish_health()
             return
 
         center_x, center_y = primary.center
@@ -242,7 +306,17 @@ class ObjectDetectorNode(Node):
         detection.normalized_x = float(center_x / image.shape[1])
         detection.normalized_y = float(center_y / image.shape[0])
         self.detection_publisher.publish(detection)
+        self.last_detection_at = now
+        self._update_presence(True, now)
         self.publish_status("detecting", "Depth-qualified person detected.")
+        self.publish_health()
+
+    def _update_presence(self, person_seen: bool, now: float) -> None:
+        change = self.presence_tracker.update(person_seen, now)
+        if change is True:
+            self.presence_publisher.publish(Bool(data=True))
+        elif change is False:
+            self.presence_publisher.publish(Bool(data=False))
 
     def _make_blob(
         self,
@@ -285,6 +359,27 @@ class ObjectDetectorNode(Node):
             source_width=source_width,
             source_height=source_height,
         )
+
+    def publish_health(self) -> None:
+        now = time.monotonic()
+        cutoff = now - 5.0
+        self._inference_times = [t for t in self._inference_times if t >= cutoff]
+        fps = len(self._inference_times) / 5.0 if self._inference_times else 0.0
+        last_detection_age = (
+            now - self.last_detection_at if self.last_detection_at > 0.0 else -1.0
+        )
+        payload = String()
+        payload.data = json.dumps(
+            {
+                "fps": round(fps, 2),
+                "last_detection_age_sec": round(last_detection_age, 2),
+                "depth_sync_ok": self._depth_sync_ok,
+                "model_loaded": self._model_loaded,
+                "presence_active": self.presence_tracker.active,
+            },
+            separators=(",", ":"),
+        )
+        self.health_publisher.publish(payload)
 
     def publish_status(self, state: str, message: str) -> None:
         if state == self.last_status:

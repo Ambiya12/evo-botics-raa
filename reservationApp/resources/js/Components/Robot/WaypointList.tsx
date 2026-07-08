@@ -20,6 +20,7 @@ export default function WaypointList({
 }: Props) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [draftName, setDraftName] = useState('');
+    const savedWaypoints = waypoints.filter((waypoint) => waypoint.source !== 'configured');
 
     const beginRename = (waypoint: Waypoint) => {
         setEditingId(waypoint.id);
@@ -42,11 +43,11 @@ export default function WaypointList({
                 </div>
                 <button
                     className="rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!pose || waypoints.length >= 3}
+                    disabled={!pose || savedWaypoints.length >= 3}
                     onClick={onAddCurrentPose}
                     type="button"
                 >
-                    {waypoints.length >= 3 ? '3/3 Saved' : 'Save Pose'}
+                    {savedWaypoints.length >= 3 ? '3/3 Saved' : 'Save Current Pose'}
                 </button>
             </div>
 
@@ -73,7 +74,14 @@ export default function WaypointList({
                                         value={draftName}
                                     />
                                 ) : (
-                                    <p className="truncate text-sm font-semibold text-gray-900">{waypoint.name}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="truncate text-sm font-semibold text-gray-900">{waypoint.name}</p>
+                                        {waypoint.source === 'configured' && (
+                                            <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-blue-700">
+                                                Map
+                                            </span>
+                                        )}
+                                    </div>
                                 )}
                                 <p className="text-xs text-gray-500">
                                     {waypoint.x.toFixed(2)}, {waypoint.y.toFixed(2)} · yaw {waypoint.yaw.toFixed(2)}
@@ -87,7 +95,7 @@ export default function WaypointList({
                                 Go
                             </button>
                         </div>
-                        <div className="mt-2 flex gap-2">
+                        {waypoint.source !== 'configured' && <div className="mt-2 flex gap-2">
                             {editingId === waypoint.id ? (
                                 <>
                                     <button
@@ -126,12 +134,14 @@ export default function WaypointList({
                             >
                                 Remove
                             </button>
-                        </div>
+                        </div>}
                     </div>
                 ))}
             </div>
             <p className="mt-3 text-right text-xs text-gray-400">
-                {waypoints.length}/3 saved in this browser
+                {waypoints.filter((waypoint) => waypoint.source === 'configured').length} from active map
+                {' · '}
+                {savedWaypoints.length}/3 saved in this browser
             </p>
         </section>
     );

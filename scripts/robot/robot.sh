@@ -43,6 +43,7 @@ Operations:
   restart <mode>              restart an explicit mode
   mcu [--force]               check/recover the systemd-managed micro-ROS agent
   health                      Jetson health snapshot
+  doctor                      Run a readiness diagnostic checklist
 
 Services: bringup camera vision reception voice dialogue reception_nav approach web teleop slam nav
 EOF
@@ -247,7 +248,7 @@ cmd_demo() {
       MAP_PATH="$SCHOOL_MAP_PATH"
       ;;
     *)
-      echo "Usage: ./scripts/robot.sh demo [home|school]" >&2
+      echo "[demo] expected exactly one of: home, school" >&2
       return 1
       ;;
   esac
@@ -261,8 +262,12 @@ cmd_demo() {
   ensure_demo_backend
 
   if [ "$DEMO_CLEAN_START" = "true" ]; then
-    echo "[demo] stopping stale services before the ${demo_map} demo"
-    cmd_stop all
+    if _ssh "tmux ls 2>/dev/null" 2>/dev/null | grep -q '^evo_'; then
+      echo "[demo] stopping stale services before the ${demo_map} demo"
+      cmd_stop all
+    else
+      echo "[demo] no stale evo_* tmux sessions — skipping clean stop"
+    fi
   elif [ "$DEMO_CLEAN_START" != "false" ]; then
     echo "[demo] DEMO_CLEAN_START must be true or false" >&2
     return 1
@@ -286,14 +291,6 @@ cmd_demo() {
 
   if ! cmd_start "$demo_profile"; then
     echo "[demo] service startup failed; stopping the partial demo stack" >&2
-    cmd_stop "$demo_profile"
-    stop_kiosk_browser
-    return 1
-  fi
-  local container
-  container="$(require_container)"
-  if ! wait_for_real_reception_navigation_ready "$container"; then
-    echo "[demo] navigation readiness failed; stopping the partial demo stack" >&2
     cmd_stop "$demo_profile"
     stop_kiosk_browser
     return 1
@@ -341,7 +338,9 @@ cmd_start() {
     fi
   fi
   if [[ " ${services} " == *" voice "* ]]; then
-    if ! ensure_webrtc_microphone || ! validate_voice_config "$container"; then
+    if ! ensure_webrtc_microphone || \
+       ! validate_voice_config "$container" || \
+       ! clean_stale_fastdds_shm "$container"; then
       return 1
     fi
   fi
@@ -349,6 +348,17 @@ cmd_start() {
     if ! resolve_kiosk_url >/dev/null; then
       return 1
     fi
+  fi
+
+  local voice_prestarted=false
+  if [ "$target" = "demo-navigation" ] && \
+     [[ " ${services} " == *" voice "* ]]; then
+    if ! start_service voice "$container" || \
+       ! wait_for_voice_ready "$container"; then
+      stop_service voice "$container"
+      return 1
+    fi
+    voice_prestarted=true
   fi
 
   # Profiles with robot bringup require a live base before localization, Nav2,
@@ -364,8 +374,19 @@ cmd_start() {
   local s
   for s in $services; do
     [ "$s" = "bringup" ] && continue
+    if [ "$s" = "voice" ] && [ "$voice_prestarted" = true ]; then
+      continue
+    fi
     if ! start_service "$s" "$container"; then
       return 1
+    fi
+    # Establish the real navigation contract before loading vision and
+    # reception processes. On the Jetson Nano those processes can otherwise
+    # delay the orchestrator child process for minutes while tmux stays alive.
+    if [ "$target" = "demo-navigation" ] && [ "$s" = "reception_nav" ]; then
+      if ! wait_for_reception_navigation_ready "$container"; then
+        return 1
+      fi
     fi
     # Validate the lightweight dashboard before starting Nav2's larger set of
     # processes. This prevents startup contention on the Jetson and makes the
@@ -382,16 +403,34 @@ cmd_start() {
         return 1
       fi
     fi
+    if [ "$s" = "camera" ]; then
+      if ! wait_for_camera_ready "$container"; then
+        stop_service camera "$container"
+        return 1
+      fi
+    fi
     # Nav2 lifecycle activation is CPU- and memory-sensitive on the Jetson.
-    # Stabilize map, costmaps, validator, and velocity routing before loading
-    # person detection and local speech models later in the demo profile.
+    # First stabilize lifecycle/map/velocity routing, then publish the
+    # reception initial pose and wait for AMCL before reception_nav starts.
     if [ "$s" = "nav" ]; then
       if ! wait_for_navigation_ready "$container"; then
         return 1
       fi
+      if ! wait_for_amcl_localized "$container"; then
+        return 1
+      fi
+    fi
+    # Block until the person detector is genuinely publishing before downstream
+    # reception and dialogue services need the /vision/people/presence topic.
+    if [ "$s" = "vision" ]; then
+      if ! wait_for_person_detection_ready "$container"; then
+        stop_service vision "$container"
+        return 1
+      fi
     fi
   done
-  if [[ " ${services} " == *" bringup "* ]] && \
+  if [ "$target" != "demo-navigation" ] && \
+     [[ " ${services} " == *" bringup "* ]] && \
      [[ " ${services} " == *" web "* ]]; then
     local require_motion=false
     if [[ " ${services} " == *" teleop "* ]] || \
@@ -455,8 +494,13 @@ cmd_stop() {
   fi
 
   for s in $services; do
-    stop_service "$s" "$container"
+    set +e
+    stop_service "$s" "$container" 2>/dev/null
+    set -e
   done
+  _ssh "tmux ls 2>/dev/null" 2>/dev/null | grep '^evo_' | while read -r line; do
+    echo "[stop] lingering session: $(echo "$line" | awk '{print $1}')"
+  done || true
 }
 
 cmd_restart() {
@@ -651,11 +695,57 @@ cmd_health() {
   jetson_health
 }
 
+cmd_doctor() {
+  if [ -n "${1:-}" ]; then
+    echo "Usage: ./scripts/robot.sh doctor" >&2
+    exit 1
+  fi
+  require_jetson_ip || return 1
+  ensure_ssh_connection || return 1
+  local container
+  container="$(resolve_container 2>/dev/null || true)"
+  run_doctor "$container"
+}
+
 cmd_logs() {
-  local name="${1:-}"
-  [ -n "$name" ] || { echo "Usage: ./scripts/robot.sh logs <service>" >&2; exit 1; }
+  local mode="attach" name="" lines="120"
+  case "${1:-}" in
+    --tail|-t)
+      mode="tail"
+      name="${2:-}"
+      lines="${3:-120}"
+      ;;
+    help|-h|--help|"")
+      echo "Usage: ./scripts/robot.sh logs [--tail|-t] <service> [lines]" >&2
+      [ -n "${1:-}" ] && return 0
+      exit 1
+      ;;
+    *)
+      name="$1"
+      if [ "${2:-}" = "--tail" ] || [ "${2:-}" = "-t" ]; then
+        mode="tail"
+        lines="${3:-120}"
+      fi
+      ;;
+  esac
+  [ -n "$name" ] || { echo "Usage: ./scripts/robot.sh logs [--tail|-t] <service> [lines]" >&2; exit 1; }
+  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || { echo "[logs] lines must be a positive integer" >&2; exit 1; }
+
   local log_path
   log_path="$(remote_quote "${SERVICE_LOG_DIR}/evo_${name}.log")"
+  if [ "$mode" = "tail" ]; then
+    _ssh "
+      if [ -f ${log_path} ]; then
+        echo '[logs] tailing captured log for evo_${name}'
+        tail -n ${lines} ${log_path}
+      else
+        echo '[logs] no captured log for evo_${name}' >&2
+        exit 1
+      fi
+    "
+    return
+  fi
+
   _ssh_tty "
     if tmux has-session -t evo_${name} 2>/dev/null; then
       tmux attach -t evo_${name}
@@ -767,6 +857,7 @@ case "${1:-}" in
   mcu)      shift; cmd_mcu "$@" ;;
   status)   shift; cmd_status "$@" ;;
   health)   shift; cmd_health "$@" ;;
+  doctor)   shift; cmd_doctor "$@" ;;
   logs)     shift; cmd_logs "$@" ;;
   config)   shift; cmd_config "$@" ;;
   ""|-h|--help|help) usage ;;
