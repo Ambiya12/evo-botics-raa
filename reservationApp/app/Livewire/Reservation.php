@@ -2,10 +2,6 @@
 
 namespace App\Livewire;
 
-use App\Mail\ReservationConfirmation;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail;
-use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 class Reservation extends Component

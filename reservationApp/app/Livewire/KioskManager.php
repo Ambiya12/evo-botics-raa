@@ -25,7 +25,7 @@ class KioskManager extends Component
         }
     }
 
-    // Simulation de la validation du scan
+    // Scan du QR code
     public function processScan($data)
     {
         $this->scanData = $data;
@@ -83,13 +83,14 @@ class KioskManager extends Component
         $this->goToStep('result');
     }
 
-    public function mount()
-    {
-        if (request()->has('step')) {
-            $this->step = request()->query('step');
-            $this->resultStatus = request()->query('status', 'error');
-        }
-    }
+    // Test UI debug via /kiosk?step=result&status=success - validating - guide
+//    public function mount()
+//    {
+//        if (request()->has('step')) {
+//            $this->step = request()->query('step');
+//            $this->resultStatus = request()->query('status', 'error');
+//        }
+//    }
 
     public function render()
     {

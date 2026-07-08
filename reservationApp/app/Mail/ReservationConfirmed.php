@@ -4,7 +4,6 @@ namespace App\Mail;
 
 use App\Models\Reservation;
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
@@ -21,21 +20,18 @@ class ReservationConfirmed extends Mailable
      */
     public function __construct(
         public Reservation $reservation,
-    ) {
-        $payload = json_encode([
-            'uuid' => $reservation->uuid,
-            'name' => $reservation->customer_name,
-            'email' => $reservation->customer_email,
-            'date' => $reservation->bookingSession->date->format('Y/m/d'),
-            'startTime' => $reservation->bookingSession->start_at,
-            'endTime' => $reservation->bookingSession->end_at,
-            'people' => $reservation->attendee_count,
+    ) {}
+
+    private function generateQrCode(): string
+    {
+        $qrData = json_encode([
+            'payload' => json_encode($this->reservation->getQrPayload()),
+            'signature' => $this->reservation->generateSignature()
         ]);
-        $secret = config('app.key');
-        $signature = hash_hmac('sha256', $payload, $secret);
-        $qrData = json_encode(['payload' => $payload, 'signature' => $signature]);
-        $this->qrCodePng = QrCode::format('png')->size(300)->generate($qrData);
+
+        return QrCode::format('png')->size(300)->generate($qrData);
     }
+    
     /**
      * Get the message envelope.
      */
@@ -53,10 +49,11 @@ class ReservationConfirmed extends Mailable
     {
         return new Content(
             markdown: 'emails.reservations.confirmed',
+            with: [
+                'validating' => base64_encode($this->generateQrCode()),
+            ],
         );
     }
-
-    public string $qrCodePng;
     
     /**
      * Get the attachments for the message.
@@ -66,7 +63,7 @@ class ReservationConfirmed extends Mailable
     public function attachments(): array
     {
         return [
-            Attachment::fromData(fn () => $this->qrCodePng, 'qrcode.png')
+            Attachment::fromData(fn () => $this->generateQrCode(), 'qrcode.png')
                 ->withMime('image/png'),
         ];
     }
