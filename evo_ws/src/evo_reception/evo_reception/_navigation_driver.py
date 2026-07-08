@@ -14,10 +14,12 @@ class NavigationDriver:
         self,
         node: Node,
         guide_action_name: str,
+        on_started: Callable[[], None],
         on_result: Callable[[int, bool], None],
         on_failure: Callable[[bool], None],
     ) -> None:
         self._node = node
+        self._on_started = on_started
         self._on_result = on_result
         self._on_failure = on_failure
         self._client = ActionClient(node, GuideToDestination, guide_action_name)
@@ -75,6 +77,7 @@ class NavigationDriver:
             return
 
         self._goal_handle = goal_handle
+        self._on_started()
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(
             lambda completed: self._on_result_callback(completed, request_token)

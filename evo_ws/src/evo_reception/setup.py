@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "dialogue_manager_node = evo_reception.dialogue_manager_node:main",
+            "mock_guide_action_server = evo_reception.mock_guide_action_server:main",
             "qr_reservation_bridge_node = evo_reception.qr_reservation_bridge_node:main",
         ],
     },

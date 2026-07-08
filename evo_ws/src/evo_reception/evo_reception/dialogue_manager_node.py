@@ -95,6 +95,7 @@ class DialogueManagerNode(Node):
 
         self.navigation = NavigationDriver(
             self, guide_action_name,
+            on_started=self._on_nav_started,
             on_result=self._on_nav_result,
             on_failure=self._on_nav_failure,
         )
@@ -271,6 +272,9 @@ class DialogueManagerNode(Node):
             self.apply(self.manager.handle_qr_result(QrValidationOutcome.UNAVAILABLE))
             return
         self.apply(self.manager.handle_qr_result(outcome, destination_id=destination_id))
+
+    def _on_nav_started(self) -> None:
+        self.apply(self.manager.handle_event(DialogueEvent.NAVIGATION_STARTED))
 
     def _on_nav_result(self, _request_token: int, arrived: bool) -> None:
         if self.navigation.returning:
