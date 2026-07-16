@@ -1,0 +1,14 @@
+# Example laptop-development registry. Replace poses using the deployed map and
+# set hardware_validated to true only after on-robot review.
+frame_id: map
+hardware_validated: false
+
+waypoints:
+  reception:
+    x: 0.0
+    y: 0.0
+    yaw: 0.0
+  "1":
+    x: 1.0
+    y: 0.0
+    yaw: 0.0

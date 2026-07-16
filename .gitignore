@@ -1,0 +1,48 @@
+source/
+
+# Bridge Python ROS local (non suivi, voir CLAUDE.md)
+reservationApp/bridge/
+
+# ROS2 generated workspace artifacts
+evo_ws/build/
+evo_ws/install/
+evo_ws/log/
+evo_ws/src/**/__pycache__/
+evo_ws/src/**/*.egg-info/
+evo_ws/src/**/.pytest_cache/
+
+../docs/Images/.DS_Store
+.idea/
+.vscode/
+
+# Exclude environment-specific files
+.env
+.DS_Store
+scripts/robot/config.local.sh
+scripts/robot/.last_profile
+
+# Dependency directories
+node_modules/
+vendor/
+
+# Laravel-specific files
+/public/storage
+/storage/*.key
+/storage/pail
+Homestead.json
+Homestead.yaml
+
+# Logs and temporary files
+*.log
+/storage/logs/*
+!/storage/logs/.gitignore
+
+# Cache and compiled files
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+!/storage/framework/cache/.gitignore
+!/storage/framework/sessions/.gitignore
+!/storage/framework/testing/.gitignore
+!/storage/framework/views/.gitignore

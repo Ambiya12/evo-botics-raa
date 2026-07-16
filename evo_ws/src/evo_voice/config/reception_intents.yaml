@@ -1,0 +1,47 @@
+priority:
+  - cancel
+  - repeat
+  - greeting
+  - negative
+  - affirmative
+  - reservation
+
+intents:
+  greeting:
+    - hi evo
+    - hello evo
+    - hey evo
+    - hello
+    - hi
+  reservation:
+    - reservation
+    - booking
+    - booked a visit
+    - have a reservation
+    - have a booking
+  affirmative:
+    - "yes"
+    - yes please
+    - yes i do
+    - yeah
+    - yep
+    - i do
+    - i have one
+  negative:
+    - "no"
+    - no thanks
+    - no thank you
+    - not yet
+    - i do not
+    - i don't
+  repeat:
+    - repeat
+    - repeat that
+    - say that again
+    - could you repeat
+  cancel:
+    - cancel
+    - stop this request
+    - stop the request
+    - never mind
+    - end the request

@@ -1,0 +1,266 @@
+from __future__ import annotations
+
+import math
+from pathlib import Path
+import time
+
+from ament_index_python.packages import get_package_share_directory
+from evo_reception_interfaces.action import GuideToDestination
+from evo_reception_interfaces.msg import NavigationStatus
+from geometry_msgs.msg import PoseWithCovarianceStamped
+import rclpy
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import Bool
+
+from evo_navigation.navigation_orchestrator import (
+    Nav2Navigator,
+    NavigationGates,
+    NavigationOrchestrator,
+    NavigationOutcome,
+    NavigationState,
+    localization_is_ready,
+    validate_navigation_configuration,
+)
+from evo_navigation.waypoints import WaypointConfigurationError, WaypointRegistry
+
+
+class NavigationOrchestratorNode(Node):
+    def __init__(self) -> None:
+        super().__init__("navigation_orchestrator_node")
+        default_registry = (
+            Path(get_package_share_directory("evo_navigation"))
+            / "config"
+            / "reception_waypoints.yaml"
+        )
+        registry_path = Path(
+            str(
+                self.declare_parameter(
+                    "waypoint_config_path", str(default_registry)
+                ).value
+            )
+        ).expanduser()
+        self.allow_real_navigation = bool(
+            self.declare_parameter("allow_real_navigation", False).value
+        )
+        self.navigation_timeout_sec = float(
+            self.declare_parameter("navigation_timeout_sec", 120.0).value
+        )
+        action_name = str(
+            self.declare_parameter(
+                "guide_action_name", "/reception/guide_to_destination"
+            ).value
+        )
+        status_topic = str(
+            self.declare_parameter(
+                "status_topic", "/reception/navigation/status"
+            ).value
+        )
+        nav2_action_name = str(
+            self.declare_parameter(
+                "nav2_action_name", "/navigate_to_pose"
+            ).value
+        )
+        estop_topic = str(
+            self.declare_parameter("estop_topic", "/e_stop_active").value
+        )
+        localization_topic = str(
+            self.declare_parameter("localization_topic", "/amcl_pose").value
+        )
+        self.estop_active = True
+        self.localization_timeout_sec = float(
+            self.declare_parameter("localization_timeout_sec", 0.0).value
+        )
+        self.max_localization_xy_variance = float(
+            self.declare_parameter(
+                "max_localization_xy_variance", 0.5
+            ).value
+        )
+        self.localization_ready = False
+        if self.navigation_timeout_sec <= 0.0:
+            raise ValueError("'navigation_timeout_sec' must be greater than zero")
+        if self.localization_timeout_sec < 0.0:
+            raise ValueError("'localization_timeout_sec' must be non-negative")
+        if self.max_localization_xy_variance <= 0.0:
+            raise ValueError(
+                "'max_localization_xy_variance' must be greater than zero"
+            )
+        self.localization_last_seen_at = 0.0
+
+        self.registry = WaypointRegistry.from_yaml(registry_path)
+        validate_navigation_configuration(
+            self.allow_real_navigation,
+            self.registry.hardware_validated,
+        )
+        self.nav2_navigator = Nav2Navigator(self, nav2_action_name)
+
+        status_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.status_publisher = self.create_publisher(
+            NavigationStatus, status_topic, status_qos
+        )
+        estop_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(Bool, estop_topic, self.on_estop, estop_qos)
+        self.create_subscription(
+            PoseWithCovarianceStamped,
+            localization_topic,
+            self.on_localization,
+            10,
+        )
+
+        self.active_goal_handle = None
+        self.active_request_id = ""
+        self.active_destination_id = ""
+        self.orchestrator = NavigationOrchestrator(
+            self.registry,
+            self.nav2_navigator,
+            self.current_gates,
+            self.publish_status,
+        )
+        callback_group = ReentrantCallbackGroup()
+        self.action_server = ActionServer(
+            self,
+            GuideToDestination,
+            action_name,
+            execute_callback=self.execute_goal,
+            goal_callback=self.accept_goal,
+            cancel_callback=self.accept_cancel,
+            callback_group=callback_group,
+        )
+        self.get_logger().warning(
+            "REAL NAVIGATION MODE ACTIVE: allow_real_navigation=true; "
+            "Nav2 goals may move the robot."
+        )
+        self.get_logger().info(
+            f"Navigation orchestrator ready: action={action_name} "
+            f"waypoint_config={registry_path}"
+        )
+
+    def current_gates(self) -> NavigationGates:
+        nav2_ready = self.nav2_navigator.ready()
+        localization_ready = localization_is_ready(
+            self.localization_ready,
+            self.localization_last_seen_at,
+            self.localization_timeout_sec,
+            time.monotonic(),
+        )
+        return NavigationGates(
+            estop_active=self.estop_active,
+            localization_ready=localization_ready,
+            nav2_ready=nav2_ready,
+        )
+
+    def on_estop(self, message: Bool) -> None:
+        self.estop_active = message.data
+
+    def on_localization(self, message: PoseWithCovarianceStamped) -> None:
+        covariance = message.pose.covariance
+        x_variance = float(covariance[0])
+        y_variance = float(covariance[7])
+        self.localization_ready = (
+            message.header.frame_id == "map"
+            and math.isfinite(x_variance)
+            and math.isfinite(y_variance)
+            and 0.0 <= x_variance <= self.max_localization_xy_variance
+            and 0.0 <= y_variance <= self.max_localization_xy_variance
+        )
+        self.localization_last_seen_at = time.monotonic()
+
+    def accept_goal(self, goal_request) -> GoalResponse:
+        if self.active_goal_handle is not None:
+            return GoalResponse.REJECT
+        return GoalResponse.ACCEPT
+
+    def accept_cancel(self, goal_handle) -> CancelResponse:
+        return CancelResponse.ACCEPT
+
+    def execute_goal(self, goal_handle):
+        request = goal_handle.request
+        self.active_goal_handle = goal_handle
+        self.active_request_id = request.request_id
+        self.active_destination_id = request.destination_id
+        result = self.orchestrator.execute(
+            request.destination_id,
+            self.navigation_timeout_sec,
+            cancelled=lambda: (
+                goal_handle.is_cancel_requested or self.estop_active
+            ),
+        )
+
+        response = GuideToDestination.Result()
+        outcomes = {
+            NavigationOutcome.ARRIVED: GuideToDestination.Result.ARRIVED,
+            NavigationOutcome.CANCELLED: GuideToDestination.Result.CANCELLED,
+            NavigationOutcome.TIMEOUT: GuideToDestination.Result.TIMEOUT,
+            NavigationOutcome.FAILED: GuideToDestination.Result.FAILED,
+        }
+        response.outcome = outcomes[result.outcome]
+        response.message = result.message
+        if result.outcome == NavigationOutcome.ARRIVED:
+            goal_handle.succeed()
+        elif result.outcome == NavigationOutcome.CANCELLED:
+            goal_handle.canceled()
+        else:
+            goal_handle.abort()
+        self.active_goal_handle = None
+        return response
+
+    def publish_status(self, state: NavigationState, message: str) -> None:
+        status = NavigationStatus()
+        status.header.stamp = self.get_clock().now().to_msg()
+        status.request_id = self.active_request_id
+        status.destination_id = self.active_destination_id
+        status.state = state.value
+        status.message = message
+        self.status_publisher.publish(status)
+        log = (
+            self.get_logger().error
+            if state == NavigationState.FAILED
+            else self.get_logger().info
+        )
+        log(
+            f"Navigation status={state.value} "
+            f"destination={self.active_destination_id or '<none>'}: {message}"
+        )
+        if self.active_goal_handle is not None:
+            feedback = GuideToDestination.Feedback()
+            feedback.state = state.value
+            self.active_goal_handle.publish_feedback(feedback)
+
+    def destroy_node(self) -> bool:
+        self.action_server.destroy()
+        return super().destroy_node()
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node: NavigationOrchestratorNode | None = None
+    try:
+        node = NavigationOrchestratorNode()
+        executor = MultiThreadedExecutor(num_threads=4)
+        executor.add_node(node)
+        executor.spin()
+    except (ValueError, WaypointConfigurationError) as exc:
+        rclpy.logging.get_logger("navigation_orchestrator_node").fatal(str(exc))
+        raise SystemExit(2) from exc
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if node is not None:
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

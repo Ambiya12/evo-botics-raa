@@ -1,0 +1,74 @@
+<?php
+
+use App\Http\Controllers\Admin\UserManagementController;
+use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReservationController;
+use App\Http\Controllers\BookingSessionController;
+use App\Http\Controllers\Admin\AdminSessionController;
+use App\Livewire\KioskManager;
+use App\Livewire\Reservation;
+use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
+
+Route::post('/locale', function (Request $request) {
+    $validated = $request->validate([
+        'locale' => 'required|in:en,fr,id,zh',
+    ]);
+    session(['locale' => $validated['locale']]);
+    app()->setLocale($validated['locale']);
+
+    return redirect()->back();
+})->name('locale.switch');
+
+Route::get('/', function () {
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+        'laravelVersion' => Application::VERSION,
+        'phpVersion' => PHP_VERSION,
+    ]);
+});
+
+Route::get('/kiosk', KioskManager::class);
+
+Route::get('/reservation', Reservation::class)->middleware(['auth', 'verified'])->name('reservation');
+
+Route::middleware(['auth', 'verified', 'not-admin'])->group(function () {
+    Route::get('/dashboard', function () {
+        return Inertia::render('Dashboard', [
+            'reservations' => auth()->user()->reservations()->with('bookingSession.room')->latest()->get(),
+        ]);
+        Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+        Route::post('/sessions/book', [BookingSessionController::class, 'bookSession']);
+    })->name('dashboard');
+
+    Route::delete('/reservations/{uuid}', [ReservationController::class, 'cancel'])->name('reservations.cancel');
+    Route::post('/sessions/book', [BookingSessionController::class, 'bookSession']);
+});
+
+Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
+    Route::prefix('robot')->name('robot.')->group(function () {
+        Route::get('/', fn () => Inertia::render('Admin/Robot/Overview'))->name('overview');
+        Route::get('/navigation', fn () => Inertia::render('Admin/Robot/Navigation'))->name('navigation');
+        Route::get('/teleop', fn () => Inertia::render('Admin/Robot/Teleop'))->name('teleop');
+        Route::get('/arm', fn () => Inertia::render('Admin/Robot/Arm'))->name('arm');
+        Route::get('/diagnostics', fn () => Inertia::render('Admin/Robot/Diagnostics'))->name('diagnostics');
+        Route::get('/connection', fn () => Inertia::render('Admin/Robot/Connection'))->name('connection');
+    });
+
+    Route::get('users', [UserManagementController::class, 'index'])->name('users.index');
+    Route::patch('users/{user}/role', [UserManagementController::class, 'updateRole'])->name('users.role.update');
+    Route::get('/sessions', [AdminSessionController::class, 'index'])->name('sessions.index');
+    Route::post('/sessions', [AdminSessionController::class, 'store'])->name('sessions.store');
+     Route::delete('/sessions/{bookingSession}', [AdminSessionController::class, 'destroy'])->name('sessions.destroy');
+});
+
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+});
+
+require __DIR__.'/auth.php';

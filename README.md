@@ -1,13 +1,11 @@
-## 🤖 Evo-Botics – Autonomous Assistance Robot (RAA)
+## Evo-Botics - Autonomous Reception Robot (RAA)
 
-**Evo-Botics** is a robotics and AI group project developed at HETIC (Web3).  
-Our mission: build an autonomous assistance robot designed for accessibility in public spaces (ERP – Établissements Recevant du Public).
+Evo-Botics is a robotics and AI group project developed at HETIC (Web3).
+Mission: build an autonomous reception robot for indoor business centers.
 
+## Team Evo-Botics
 
-
-## 👥 Team Evo-Botics
-
-A multidisciplinary robotics team combining:
+A multidisciplinary robotics team:
 
 - Ambiya Dimas Galystan
 
@@ -17,71 +15,84 @@ A multidisciplinary robotics team combining:
 
 - Jules Bourrin
 
+## Project Context
 
-## 🌍 Project Context
+The project targets reception and visitor guidance in business centers.
+The robot improves visitor flow and reduces front-desk load.
 
-In France, over 12 million people live with disabilities.  
-Many public spaces remain partially inaccessible despite legal requirements.
+The solution is an autonomous service robot capable of:
 
-Our solution:  
-An affordable, autonomous service robot capable of:
+- Navigating safely on one floor
+- Scanning QR reservations
+- Guiding visitors to room waypoints
+- Providing a web admin interface and notifications
 
--   Navigating safely in indoor environments
-    
--   Transporting objects (books, documents, small parcels)
-    
--   Interacting via an accessible web interface
-    
--   Communicating in real-time with a monitoring system
-    
+## Reception demo
 
-* * *
+The maintained one-command reception demo is:
 
-## 🎯 Objectives
+```bash
+./scripts/robot.sh demo
+```
 
-### 🧭 Autonomous Navigation
+The shared default is the School deployment. The current robot's ignored
+`scripts/robot/config.local.sh` selects Home, so the same command currently
+starts the Home demo. An explicit selection is also available:
 
--   SLAM mapping
-    
--   Obstacle avoidance
-    
--   Optimized path planning
-    
+```bash
+./scripts/robot.sh demo home
+./scripts/robot.sh demo school
+```
 
-### 🦾 Object Manipulation
+The command cleanly stops stale services, starts real camera/person detection,
+real WebRTC microphone/STT, Piper TTS, real QR decoding, real Laravel
+validation, dialogue, the kiosk, and navigation. On the accepted controlled-site
+Home configuration it starts `/root/maps/home.yaml`, AMCL, Nav2, and the
+hardware-authorized reception orchestrator. Valid room IDs physically guide to
+Mante Inc Room or Bayer Inc Room. Automatic physical return remains gated off
+for B4 and can be enabled for B5 after B4 acceptance. Startup remains
+fail-closed until the private, hardware-validated map and waypoint paths are
+configured.
 
--   Object detection (QR / computer vision)
-    
--   Robotic arm grasp & placement
-    
+See [scripts/README.md](scripts/README.md) for configuration, deployment,
+verification, and rollback instructions.
 
-### 🌐 Accessible Web Interface
+---
 
--   Dashboard for robot control
-    
--   WCAG-compliant interface
-    
--   Optional voice commands
-    
+## Objectives
 
-### 📡 IoT Communication
+### Autonomous Navigation
 
--   Real-time robot tracking
-    
--   MQTT/WebSocket communication
-    
--   Alert system
-    
+- SLAM mapping
+- Obstacle avoidance
+- Optimized path planning
 
+### Voice and Vision
 
-## 🛠 Tech Stack
+- QR detection and reservation validation
+- Speech pipeline (STT -> intent detection -> queued TTS)
 
-| Layer | Technologies |
-| --- | --- |
-| Robot OS | ROS (Navigation Stack, MoveIt) |
-| Mapping | RTAB-Map + LiDAR |
-| Vision | OpenCV |
-| Backend | Node.js |
-| Frontend | React.js + ARIA |
-| Communication | MQTT / WebSockets |
-| Hardware | Yahboom Transbot (Jetson Nano) |
+### Web Interface
+
+- Touchscreen visitor feedback flow
+- Admin dashboard via rosbridge
+- Monitoring and emergency stop
+
+### Communication
+
+- ROS2 DDS for robot nodes
+- WebSocket bridge for UI
+- Email/webhook alert pipeline
+
+## Tech Stack
+
+| Layer         | Technologies                      |
+| ------------- | --------------------------------- |
+| Robot OS      | ROS2 Humble (Nav2)                |
+| Mapping       | SLAM Toolbox + LiDAR              |
+| Vision        | OpenCV, YOLOv8                    |
+| Voice         | Whisper, Piper                    |
+| Backend       | Laravel, webhooks                 |
+| Frontend      | React                             |
+| Communication | DDS, rosbridge, Foxglove          |
+| Hardware      | ROSMASTER M3 Pro + Jetson Orin NX |
