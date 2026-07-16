@@ -43,6 +43,8 @@ The project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from YAML.
 - Logout test expectations to match the maintained redirect to the login page.
 - Fixable development-tool dependency advisories in the npm lockfile.
+- Composer resolution now honors the declared PHP 8.2 minimum and uses patched
+  Laravel, Guzzle, and Symfony dependency versions.
 
 [Unreleased]: https://github.com/Ambiya12/evo-botics-raa/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/Ambiya12/evo-botics-raa/releases/tag/v0.1.0
