@@ -7,7 +7,7 @@ The MVP targets first-time and time-constrained visitors who need a smooth voice
 
 ## 2) MVP Scope (max 5 bullets)
 - Start a voice-first welcome and reservation validation flow, with screen used only for status feedback.
-- Validate reservation through QR code only via API and confirm eligibility in real time (with mock fallback).
+- Validate reservation through QR code only via the real API and fail closed when it is unavailable.
 - Distribute the visitor badge after successful reservation validation.
 - Guide the visitor to the correct room waypoint on the same floor with safe autonomous navigation.
 - Return autonomously to the original reception/standby position after drop-off, and notify staff only on exceptions.
@@ -41,7 +41,7 @@ Le MVP cible les primo-visiteurs et les profils pressés avec un flux vocal flui
 
 ## 2) Périmètre MVP (5 bullets max)
 - Démarrer un accueil vocal et un flux de validation de réservation, avec écran utilisé uniquement pour le retour d'état.
-- Valider la réservation uniquement via QR code par API et confirmer l'éligibilité en temps réel (avec fallback mock).
+- Valider la réservation uniquement via QR code par l'API réelle et bloquer le flux si elle est indisponible.
 - Distribuer le badge visiteur après validation réussie de la réservation.
 - Guider le visiteur vers le waypoint de la salle sur le même étage avec une navigation autonome sécurisée.
 - Revenir de manière autonome à la position d'accueil/veille après le dépôt, et notifier le personnel uniquement en cas d'exception.

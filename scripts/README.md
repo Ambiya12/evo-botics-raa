@@ -53,7 +53,6 @@ The ignored robot configuration sets:
 ```bash
 DEFAULT_DEMO_MAP=home
 DEMO_START_LARAVEL=true
-DEMO_REAL_NAVIGATION=true
 HOME_MAP_PATH=/root/maps/home.yaml
 HOME_RECEPTION_WAYPOINT_CONFIG_PATH=/root/evo_ws/install/evo_navigation/share/evo_navigation/config/home_reception_waypoints.yaml
 ```
@@ -127,10 +126,9 @@ Stop the complete demo and kiosk with:
 ./scripts/robot.sh stop demo
 ```
 
-With `DEMO_REAL_NAVIGATION=true`, startup refuses to open the kiosk until the
-reviewed map, AMCL pose, inactive E-stop, Nav2, and real reception action are
-available. The orchestrator requires `mock_navigation=false`,
-`allow_real_navigation=true`, a fresh `map`-frame localization with bounded
+Startup refuses to continue until the reviewed map, AMCL pose, inactive
+E-stop, Nav2, and real reception action are available. The orchestrator
+requires `allow_real_navigation=true`, a `map`-frame localization with bounded
 covariance, and a registry marked `hardware_validated: true`.
 
 For the first B4 run, keep:
@@ -144,15 +142,9 @@ After B4 is recorded as passed, begin B5 by changing only that value to
 Reception waypoint after “Have a nice day” and return to `IDLE` only after
 Nav2 reports arrival.
 
-To return immediately to the movement-disabled reception profile:
-
-```bash
-DEMO_REAL_NAVIGATION=false ./scripts/robot.sh demo home
-```
-
-The shared repository default is `DEMO_REAL_NAVIGATION=false`, so a fresh
-deployment remains fail-closed until its private controlled-site configuration
-explicitly enables movement.
+There is no simulated reception-navigation profile. A fresh deployment remains
+fail-closed until its private controlled-site map and waypoint paths are
+configured.
 
 ## Deploy ROS changes
 
@@ -164,7 +156,9 @@ After changing files under `evo_ws/src/`, deploy and build them on the robot:
 ```
 
 `setup` copies `evo_ws/src` from the Mac to the Jetson, copies it into the
-`evo-ros` container, and runs the workspace build there.
+`evo-ros` container, removes the previous `build`, `install`, and `log`
+directories, and performs a clean workspace build there. Run `stop all` first;
+if the clean build fails, the previous install is intentionally unavailable.
 
 ## Workflow 1: launch with a saved map
 
@@ -253,6 +247,19 @@ its transient-local header instead of repeatedly printing the complete
 occupancy grid; this prevents a valid initial pose from appearing to hang the
 launcher for several minutes.
 
+Every ROS graph probe also has its own short timeout, so a stalled ROS CLI or
+DDS discovery request cannot freeze the outer deadline before diagnostics are
+printed. The kiosk opens before Nav2 initialization and may briefly show a
+connecting state; QR input and navigation remain ignored until the reception
+state machine reaches their explicitly allowed states.
+
+The launcher establishes one multiplexed SSH control connection before
+starting the demo and reuses it for service probes, tmux launches, and
+readiness checks. This avoids dozens of simultaneous SSH handshakes while the
+Jetson is loading Nav2 and local vision models. The default keepalive tolerates
+up to roughly 60 seconds of temporary Jetson load before treating the
+connection as lost.
+
 ## Workflow 2: create and save a map
 
 Mapping moves the real robot. Use it only in the reviewed mapping area with the
@@ -281,10 +288,10 @@ that Dockerfile using the robot image deployment procedure. Running
 `./scripts/robot.sh setup` only deploys and builds the ROS workspace; it does
 not add Ubuntu or ROS binary packages to an existing container.
 
-The image also explicitly installs and checks the saved-map launch
-dependencies: Nav2, SLAM Toolbox, rosbridge, OpenCV/cv_bridge, NumPy, YAML, QR
-decoding with pyzbar/zbar, Foxglove, robot-state-publisher, and xacro. These
-checks run while the image is built, so an incomplete image fails before it is
+The image explicitly installs the workspace runtime dependencies: Nav2
+bringup, SLAM Toolbox, rosbridge, OpenCV/cv_bridge, NumPy, YAML, QR decoding
+with pyzbar/zbar, Foxglove, RViz, and the robot-description tools used by the
+vendor bringup. Its build-time checks catch an incomplete image before it is
 provisioned on the robot.
 
 If mapping is already running, stop it before changing between RViz and
@@ -346,11 +353,12 @@ Launch the saved map later:
 ./scripts/robot.sh nav school_v2
 ```
 
-## Workflow 3: unfinished `evo_voice`
+## Workflow 3: voice development
 
-`evo_voice` is intentionally separate from saved-map navigation and mapping.
-It is not included in `launch`, because the voice reception workflow is not
-finished or accepted yet.
+The maintained `evo_voice` stack separates speech-to-text, deterministic intent
+detection, and queued text-to-speech. The complete reception demo starts it
+automatically; this command runs the voice stack alone for development and
+diagnosis.
 
 Start only the voice stack:
 
@@ -358,15 +366,13 @@ Start only the voice stack:
 ./scripts/robot.sh start voice
 ```
 
-By default, TTS and STT use mock audio. Real local devices and models can be
-configured in the ignored `scripts/robot/config.local.sh`:
+TTS and STT require real local devices and models configured in the ignored
+`scripts/robot/config.local.sh`:
 
 ```bash
-: "${TTS_MOCK_AUDIO:=false}"
 : "${PIPER_MODEL_PATH:=/absolute/path/to/local/model.onnx}"
 : "${AUDIO_OUTPUT_DEVICE:=}"
 
-: "${STT_MOCK_AUDIO:=false}"
 : "${STT_MODEL_PATH:=/absolute/path/to/local/whisper/model}"
 : "${STT_DEVICE:=cpu}"
 : "${STT_COMPUTE_TYPE:=int8}"
@@ -380,39 +386,23 @@ Stop voice before changing audio configuration:
 ./scripts/robot.sh stop voice
 ```
 
-Do not treat a successful isolated voice launch as acceptance of the complete
-reception workflow.
+An isolated voice launch validates audio and intent processing only, not the
+complete reception workflow.
 
-## Workflow 4: stationary reception
+## Workflow 4: reception component diagnosis
 
-Start camera, QR scanning, mocked reservation validation, voice, dialogue,
-the web bridge, and the forced-mock navigation orchestrator:
-
-```bash
-./scripts/robot.sh start stationary-reception
-```
-
-Startup fails if `/reception/workflow/status` cannot be received or if the
-orchestrator does not report `mock_navigation=true` and
-`allow_real_navigation=false`. This profile does not start bringup, Nav2,
-teleop, or any velocity pipeline.
-
-Stop it with:
+Start real camera input, QR scanning, Laravel validation, and the web bridge:
 
 ```bash
-./scripts/robot.sh stop stationary-reception
+./scripts/robot.sh start camera-qr
 ```
 
-For real camera, voice, QR decoding, and Laravel validation while physical
-navigation remains forcibly disabled:
+This requires `RECEPTION_VALIDATION_URL` (or a resolvable app host). It does
+not start voice, dialogue, Nav2, teleop, or any velocity pipeline. Stop it with:
 
 ```bash
-./scripts/robot.sh start stationary-reception-real
+./scripts/robot.sh stop camera-qr
 ```
-
-This requires `RECEPTION_VALIDATION_URL` and verifies
-`mock_mode=false` on the reservation bridge while retaining
-`mock_navigation=true` and `allow_real_navigation=false`.
 
 ## Operations
 
@@ -531,6 +521,6 @@ docker logs --tail 100 evo-micro-ros-agent
   localization, waypoint poses, clearances, or Nav2 behavior are accepted.
 - Mapping and navigation require real-robot checks and an operator-controlled
   site.
-- `evo_voice` remains unfinished and separate.
+- The isolated voice command does not start the rest of the reception workflow.
 - Commands in this README are operational robot commands; run them manually
   only in the appropriate robot environment.

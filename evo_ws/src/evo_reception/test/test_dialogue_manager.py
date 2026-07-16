@@ -1,11 +1,29 @@
 import pytest
 
 from evo_reception.dialogue_manager import (
+    DeferredGreeting,
     DialogueEvent,
     DialogueManager,
     DialogueState,
     TtsStatusTracker,
 )
+
+
+def test_deferred_greeting_releases_once_when_voice_becomes_ready() -> None:
+    greeting = DeferredGreeting()
+    greeting.defer()
+
+    assert not greeting.release(tts_ready=False, visitor_present=True)
+    assert greeting.release(tts_ready=True, visitor_present=True)
+    assert not greeting.release(tts_ready=True, visitor_present=True)
+
+
+def test_deferred_greeting_does_not_release_after_departure() -> None:
+    greeting = DeferredGreeting()
+    greeting.defer()
+    greeting.clear()
+
+    assert not greeting.release(tts_ready=True, visitor_present=False)
 from evo_reception.qr_integration import QrValidationOutcome
 
 
@@ -118,10 +136,20 @@ def test_reservation_intent_remains_an_affirmative_fallback() -> None:
     assert manager.state == DialogueState.WAITING_FOR_QR
 
 
-def test_greeting_without_detected_presence_is_ignored() -> None:
+def test_greeting_intent_from_idle_transitions_to_greeting() -> None:
     manager = DialogueManager()
 
     transition = manager.handle_intent("greeting")
+
+    assert transition.accepted
+    assert transition.speech == ("greeting",)
+    assert manager.state == DialogueState.GREETING
+
+
+def test_non_greeting_intent_from_idle_is_ignored() -> None:
+    manager = DialogueManager()
+
+    transition = manager.handle_intent("affirmative")
 
     assert not transition.accepted
     assert manager.state == DialogueState.IDLE
@@ -138,7 +166,7 @@ def test_person_leaving_disarms_before_greeting() -> None:
     assert not manager.handle_intent("greeting").accepted
 
 
-def test_presence_fallback_greets_without_spoken_hello() -> None:
+def test_presence_timeout_starts_automatic_greeting() -> None:
     manager = DialogueManager()
     manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
 
@@ -146,8 +174,20 @@ def test_presence_fallback_greets_without_spoken_hello() -> None:
         DialogueEvent.PRESENCE_GREETING_TIMEOUT
     )
 
+    assert transition.accepted
     assert transition.speech == ("greeting",)
     assert manager.state == DialogueState.GREETING
+
+
+def test_presence_never_greets_without_spoken_hello() -> None:
+    manager = DialogueManager()
+    manager.handle_event(DialogueEvent.VISITOR_APPROACHED)
+
+    transition = manager.handle_event(DialogueEvent.INACTIVITY_TIMEOUT)
+
+    assert not transition.accepted
+    assert transition.speech == ()
+    assert manager.state == DialogueState.PRESENCE_ARMED
 
 
 def test_presence_armed_remains_ready_until_visitor_leaves() -> None:

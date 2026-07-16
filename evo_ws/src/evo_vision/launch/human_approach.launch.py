@@ -20,6 +20,7 @@ def generate_launch_description():
             "dialogue_state_topic", default_value="/reception/dialogue/state"
         ),
         DeclareLaunchArgument("zone_id", default_value="reception"),
+        DeclareLaunchArgument("detection_max_age_sec", default_value="1.0"),
         DeclareLaunchArgument("min_confidence", default_value="0.65"),
         DeclareLaunchArgument("min_distance_m", default_value="0.5"),
         DeclareLaunchArgument("max_distance_m", default_value="2.5"),
@@ -29,7 +30,7 @@ def generate_launch_description():
         DeclareLaunchArgument("zone_max_y", default_value="0.95"),
         DeclareLaunchArgument("debounce_frames", default_value="3"),
         DeclareLaunchArgument("cooldown_sec", default_value="10.0"),
-        DeclareLaunchArgument("absence_reset_sec", default_value="1.0"),
+        DeclareLaunchArgument("absence_reset_sec", default_value="10.0"),
 
         Node(
             package="evo_vision",
@@ -43,6 +44,10 @@ def generate_launch_description():
                     "dialogue_state_topic"
                 ),
                 "zone_id": LaunchConfiguration("zone_id"),
+                "detection_max_age_sec": ParameterValue(
+                    LaunchConfiguration("detection_max_age_sec"),
+                    value_type=float,
+                ),
                 "min_confidence": ParameterValue(
                     LaunchConfiguration("min_confidence"), value_type=float
                 ),

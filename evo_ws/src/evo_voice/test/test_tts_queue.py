@@ -7,7 +7,6 @@ from evo_voice.tts_queue import (
     FAILED,
     IDLE,
     SPEAKING,
-    MockSpeechPlayer,
     PiperSpeechPlayer,
     QueuedTts,
     SpeakRequest,
@@ -37,7 +36,15 @@ class BlockingPlayer:
 
 class FailingPlayer:
     def play(self, text: str) -> None:
-        raise RuntimeError("mock playback failed")
+        raise RuntimeError("playback failed")
+
+
+class RecordingPlayer:
+    def __init__(self) -> None:
+        self.played_texts: list[str] = []
+
+    def play(self, text: str) -> None:
+        self.played_texts.append(text)
 
 
 def test_requests_play_in_order_without_overlap() -> None:
@@ -66,8 +73,8 @@ def test_requests_play_in_order_without_overlap() -> None:
         queue.shutdown()
 
 
-def test_mock_player_publishes_completed_statuses() -> None:
-    player = MockSpeechPlayer()
+def test_player_publishes_completed_statuses() -> None:
+    player = RecordingPlayer()
     statuses: list[str] = []
     queue = QueuedTts(player, statuses.append)
     try:
@@ -116,6 +123,7 @@ def test_piper_player_uses_configured_audio_output_without_hardware() -> None:
             input="Hello",
             text=True,
             check=True,
+            timeout=30.0,
         ),
         call(
             [
@@ -126,8 +134,43 @@ def test_piper_player_uses_configured_audio_output_without_hardware() -> None:
                 "/tmp/evo_voice_tts.wav",
             ],
             check=True,
+            timeout=30.0,
         ),
     ]
+
+
+def test_playback_timeout_is_reported_and_next_request_still_runs() -> None:
+    player = RecordingPlayer()
+    errors: list[tuple[SpeakRequest, Exception]] = []
+    statuses: list[str] = []
+
+    class TimeoutOncePlayer:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def play(self, text: str) -> None:
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("playback timed out")
+            player.play(text)
+
+    queue = QueuedTts(
+        TimeoutOncePlayer(),
+        statuses.append,
+        lambda request, error: errors.append((request, error)),
+    )
+    try:
+        queue.enqueue(SpeakRequest("first", "tts-1"))
+        queue.enqueue(SpeakRequest("second", "tts-2"))
+        queue.wait_until_empty()
+    finally:
+        queue.shutdown()
+
+    assert len(errors) == 1
+    assert errors[0][0].request_id == "tts-1"
+    assert player.played_texts == ["second"]
+    assert FAILED in statuses
+    assert statuses[-1] == IDLE
 
 
 def test_piper_player_prewarms_and_reuses_cached_phrase(tmp_path: Path) -> None:

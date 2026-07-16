@@ -11,14 +11,65 @@ require_jetson_ip() {
   fi
 }
 
+ssh_control_path() {
+  # Keep this deliberately short: macOS limits Unix-domain socket paths.
+  printf '/tmp/evo-ssh-%s-%s' \
+    "$JETSON_USER" "${JETSON_IP//./-}"
+}
+
 _ssh() {
+  local control_path
   require_jetson_ip || return 1
-  ssh -o ConnectTimeout=8 "${JETSON_USER}@${JETSON_IP}" "$@"
+  control_path="$(ssh_control_path)"
+  ssh \
+    -o ConnectTimeout=8 \
+    -o ConnectionAttempts=2 \
+    -o ControlMaster=auto \
+    -o "ControlPersist=${SSH_CONTROL_PERSIST_SEC}" \
+    -o "ControlPath=${control_path}" \
+    -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL_SEC}" \
+    -o "ServerAliveCountMax=${SSH_SERVER_ALIVE_COUNT_MAX}" \
+    "${JETSON_USER}@${JETSON_IP}" "$@"
 }
 
 _ssh_tty() {
+  local control_path
   require_jetson_ip || return 1
-  ssh -t -o ConnectTimeout=8 "${JETSON_USER}@${JETSON_IP}" "$@"
+  control_path="$(ssh_control_path)"
+  ssh -t \
+    -o ConnectTimeout=8 \
+    -o ConnectionAttempts=2 \
+    -o ControlMaster=auto \
+    -o "ControlPersist=${SSH_CONTROL_PERSIST_SEC}" \
+    -o "ControlPath=${control_path}" \
+    -o "ServerAliveInterval=${SSH_SERVER_ALIVE_INTERVAL_SEC}" \
+    -o "ServerAliveCountMax=${SSH_SERVER_ALIVE_COUNT_MAX}" \
+    "${JETSON_USER}@${JETSON_IP}" "$@"
+}
+
+ensure_ssh_connection() {
+  local control_path
+  control_path="$(ssh_control_path)"
+  echo "[ssh] establishing persistent connection to ${JETSON_USER}@${JETSON_IP}"
+  if ! _ssh "true"; then
+    echo "[ssh] Jetson is unreachable; no robot services were started." >&2
+    return 1
+  fi
+  echo "[ssh] ready: multiplexed control connection ${control_path}"
+}
+
+# Preserve the difference between a normal remote false result and a broken
+# SSH transport. Optional probes (for example tmux has-session) may legitimately
+# return 1, but must never interpret SSH's 255 as "service not running".
+_ssh_test() {
+  local status
+  _ssh "$@"
+  status=$?
+  if [ "$status" -eq 255 ]; then
+    echo "[ssh] lost connection to ${JETSON_USER}@${JETSON_IP}; aborting startup" >&2
+    return 2
+  fi
+  return "$status"
 }
 
 remote_quote() { printf "%s" "$1" | sed "s/'/'\\\\''/g; 1s/^/'/; \$s/\$/'/"; }
@@ -28,7 +79,7 @@ _ros_prelude() {
 "source /opt/ros/humble/setup.bash; \
 source /root/yahboomcar_ws/install/setup.bash 2>/dev/null || true; \
 source /root/M3Pro_ws/install/setup.bash 2>/dev/null || true; \
-source /root/evo_ws/install/setup.bash; \
+source /root/evo_ws/install/setup.bash 2>/dev/null || true; \
 export ROS_DOMAIN_ID=${ROS_DOMAIN_ID}; \
 export FASTDDS_BUILTIN_TRANSPORTS=${FASTDDS_BUILTIN_TRANSPORTS}; \
 export RMW_IMPLEMENTATION=${RMW_IMPLEMENTATION}"
@@ -125,7 +176,8 @@ ensure_map_in_docker() {
     return 0
   fi
 
-  if [ "$docker_yaml" = "$PACKAGED_MAP_PATH" ]; then
+  if [ "$docker_yaml" = "$PACKAGED_MAP_PATH" ] || \
+     [[ "$docker_yaml" == "${DOCKER_WS}/src/evo_navigation/maps/"*.yaml ]]; then
     echo "[maps] repository map is missing in Docker: ${docker_yaml}" >&2
     echo "[maps] run ./scripts/robot.sh setup to deploy the repository map" >&2
     return 1
@@ -573,12 +625,11 @@ service_cmd() {
     reception)
       local validation_url
       validation_url="$(resolve_reception_validation_url)" || return 1
-      echo "ros2 launch evo_reception reception.launch.py mock_mode:=false validation_url:=${validation_url}"
+      echo "ros2 launch evo_reception reception.launch.py validation_url:=${validation_url}"
       ;;
-    reception_mock) echo "ros2 launch evo_reception reception.launch.py mock_mode:=true mock_outcome:=${RECEPTION_MOCK_OUTCOME} mock_destination_id:=${RECEPTION_MOCK_DESTINATION_ID}" ;;
     voice)
       local voice_cmd
-      voice_cmd="ros2 launch evo_voice reception_voice.launch.py tts_mock_audio:=${TTS_MOCK_AUDIO} stt_mock_audio:=${STT_MOCK_AUDIO} stt_device:=${STT_DEVICE} stt_compute_type:=${STT_COMPUTE_TYPE} language:=${VOICE_LANGUAGE} microphone_device:=${MICROPHONE_DEVICE} phrase_time_limit_sec:=${STT_PHRASE_TIME_LIMIT_SEC} pause_threshold_sec:=${STT_PAUSE_THRESHOLD_SEC} non_speaking_duration_sec:=${STT_NON_SPEAKING_DURATION_SEC}"
+      voice_cmd="ros2 launch evo_voice reception_voice.launch.py stt_device:=${STT_DEVICE} stt_compute_type:=${STT_COMPUTE_TYPE} language:=${VOICE_LANGUAGE} microphone_device:=${MICROPHONE_DEVICE} phrase_time_limit_sec:=${STT_PHRASE_TIME_LIMIT_SEC} pause_threshold_sec:=${STT_PAUSE_THRESHOLD_SEC} non_speaking_duration_sec:=${STT_NON_SPEAKING_DURATION_SEC}"
       if [ -n "$PIPER_MODEL_PATH" ]; then
         voice_cmd="${voice_cmd} piper_model_path:=${PIPER_MODEL_PATH}"
       fi
@@ -593,20 +644,13 @@ service_cmd() {
     dialogue)
       echo "ros2 launch evo_reception dialogue_manager.launch.py presence_greeting_fallback_sec:=${PRESENCE_GREETING_FALLBACK_SEC} intent_timeout_sec:=${INTENT_TIMEOUT_SEC} qr_inactivity_timeout_sec:=${QR_INACTIVITY_TIMEOUT_SEC} allowed_destination_ids_csv:=${RECEPTION_ALLOWED_DESTINATION_IDS} automatic_return_enabled:=${AUTOMATIC_RETURN_ENABLED}"
       ;;
-    stationary_nav)
-      if [ -n "$RECEPTION_WAYPOINT_CONFIG_PATH" ]; then
-        echo "ros2 launch evo_navigation stationary_orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH}"
-      else
-        echo "ros2 launch evo_navigation stationary_orchestrator.launch.py"
-      fi
-      ;;
     reception_nav)
-      echo "ros2 launch evo_navigation orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH} mock_navigation:=false allow_real_navigation:=true navigation_timeout_sec:=${REAL_NAVIGATION_TIMEOUT_SEC} localization_timeout_sec:=${REAL_LOCALIZATION_TIMEOUT_SEC} max_localization_xy_variance:=${REAL_MAX_LOCALIZATION_XY_VARIANCE}"
+      echo "ros2 launch evo_navigation orchestrator.launch.py waypoint_config_path:=${RECEPTION_WAYPOINT_CONFIG_PATH} allow_real_navigation:=true navigation_timeout_sec:=${REAL_NAVIGATION_TIMEOUT_SEC} localization_timeout_sec:=${REAL_LOCALIZATION_TIMEOUT_SEC} max_localization_xy_variance:=${REAL_MAX_LOCALIZATION_XY_VARIANCE}"
       ;;
     approach)
       echo "ros2 launch evo_vision human_approach.launch.py min_confidence:=${APPROACH_MIN_CONFIDENCE} min_distance_m:=${APPROACH_MIN_DISTANCE_M} max_distance_m:=${APPROACH_MAX_DISTANCE_M} zone_min_x:=${APPROACH_ZONE_MIN_X} zone_max_x:=${APPROACH_ZONE_MAX_X} zone_min_y:=${APPROACH_ZONE_MIN_Y} zone_max_y:=${APPROACH_ZONE_MAX_Y} debounce_frames:=${APPROACH_DEBOUNCE_FRAMES} cooldown_sec:=${APPROACH_COOLDOWN_SEC} absence_reset_sec:=${APPROACH_ABSENCE_RESET_SEC}"
       ;;
-    web)     echo "ros2 launch evo_web web_dashboard.launch.py rosbridge:=${ROSBRIDGE} rosbridge_port:=${ROSBRIDGE_PORT} http_port:=${CAMERA_PORT} camera_topic:=${CAMERA_TOPIC} camera_max_fps:=${CAMERA_MAX_FPS} camera_max_width:=${CAMERA_MAX_WIDTH} camera_jpeg_quality:=${CAMERA_JPEG_QUALITY}" ;;
+    web)     echo "ros2 launch evo_web web_dashboard.launch.py rosbridge:=${ROSBRIDGE} rosbridge_port:=${ROSBRIDGE_PORT} http_port:=${CAMERA_PORT} camera_topic:=${CAMERA_TOPIC} camera_max_fps:=${CAMERA_MAX_FPS} camera_max_width:=${CAMERA_MAX_WIDTH} camera_jpeg_quality:=${CAMERA_JPEG_QUALITY} arm_input_topic:=${ARM_INPUT_TOPIC} arm_output_topic:=${ARM_OUTPUT_TOPIC}" ;;
     teleop)  echo "ros2 launch evo_navigation teleop.launch.py" ;;
     slam)    echo "ros2 launch evo_navigation slam_online.launch.py rviz:=${SLAM_RVIZ:-false} use_collision_monitor:=${SLAM_USE_COLLISION_MONITOR}" ;;
     nav)     echo "ros2 launch evo_navigation navigation.launch.py map:=${MAP_PATH} rviz:=false use_collision_monitor:=${NAV_USE_COLLISION_MONITOR}" ;;
@@ -621,10 +665,8 @@ service_pattern() {
     camera)  echo "app_camera.launch.py" ;;
     vision)  echo "vision.launch.py" ;;
     reception) echo "reception.launch.py" ;;
-    reception_mock) echo "reception.launch.py" ;;
     voice) echo "reception_voice.launch.py" ;;
     dialogue) echo "dialogue_manager.launch.py" ;;
-    stationary_nav) echo "stationary_orchestrator.launch.py" ;;
     reception_nav) echo "orchestrator.launch.py" ;;
     approach) echo "human_approach.launch.py" ;;
     web)     echo "web_dashboard.launch.py" ;;
@@ -635,7 +677,7 @@ service_pattern() {
   esac
 }
 
-ALL_SERVICES="bringup camera vision reception reception_mock voice dialogue stationary_nav reception_nav approach web teleop slam nav"
+ALL_SERVICES="bringup camera vision reception voice dialogue reception_nav approach web teleop slam nav"
 
 # Profils = raccourcis ; un nom inconnu est renvoyé tel quel (service unique).
 expand_profile() {
@@ -644,13 +686,15 @@ expand_profile() {
     navigate) echo "bringup camera web nav"    ;;
     base)     echo "bringup camera vision web teleop" ;;   # base + caméra + vision + web
     reception) echo "bringup camera vision reception web teleop" ;;
-    camera-qr) echo "camera vision reception_mock web" ;;
-    stationary-reception) echo "camera vision reception_mock voice dialogue approach stationary_nav web" ;;
-    stationary-reception-real) echo "camera vision reception voice dialogue approach stationary_nav web" ;;
-    demo) echo "bringup camera nav vision reception voice dialogue approach stationary_nav reception_nav web" ;;
-    # Start and validate the lightweight web bridge before Nav2 and local ML
-    # models compete for Jetson CPU, memory, and disk during cold startup.
-    demo-navigation) echo "bringup camera web nav vision reception voice dialogue approach reception_nav" ;;
+    camera-qr) echo "camera vision reception web" ;;
+    demo) echo "bringup camera nav voice dialogue vision reception approach reception_nav web" ;;
+    # cmd_start preloads voice before bringup for this profile. Keep voice in
+    # the list so profile cleanup and failure handling still own the service.
+    # vision starts early so detection is warm before the operator finishes the
+    # AMCL pose; dialogue starts last so it never waits on a missing publisher.
+    # approach is intentionally excluded -- it is kept available for a future
+    # "approach the visitor" behaviour but is not launched for the greeting demo.
+    demo-navigation) echo "bringup voice camera web vision nav reception_nav reception dialogue" ;;
     kiosk)    echo "bringup camera vision reception web teleop" ;;
     launch)   echo "bringup camera nav vision reception web" ;;
     *)        echo "$1"                         ;;
@@ -659,20 +703,122 @@ expand_profile() {
 
 validate_voice_config() {
   local container="$1"
-  if [ "$TTS_MOCK_AUDIO" = "false" ]; then
-    if [ -z "$PIPER_MODEL_PATH" ] || \
-       ! _ssh "docker exec ${container} test -f $(remote_quote "$PIPER_MODEL_PATH")"; then
-      echo "[voice] Piper model is missing in ${container}: ${PIPER_MODEL_PATH:-<not configured>}" >&2
-      return 1
-    fi
+  if [ -z "$PIPER_MODEL_PATH" ] || \
+     ! _ssh "docker exec ${container} test -f $(remote_quote "$PIPER_MODEL_PATH")"; then
+    echo "[voice] Piper model is missing in ${container}: ${PIPER_MODEL_PATH:-<not configured>}" >&2
+    return 1
   fi
-  if [ "$STT_MOCK_AUDIO" = "false" ]; then
-    if [ -z "$STT_MODEL_PATH" ] || \
-       ! _ssh "docker exec ${container} test -s $(remote_quote "${STT_MODEL_PATH}/model.bin")"; then
-      echo "[voice] Faster-Whisper model.bin is missing in ${container}: ${STT_MODEL_PATH:-<not configured>}" >&2
-      return 1
-    fi
+  if [ -z "$STT_MODEL_PATH" ] || \
+     ! _ssh "docker exec ${container} test -s $(remote_quote "${STT_MODEL_PATH}/model.bin")"; then
+    echo "[voice] Faster-Whisper model.bin is missing in ${container}: ${STT_MODEL_PATH:-<not configured>}" >&2
+    return 1
   fi
+  if [ "$WEBRTC_MIC_ENABLED" = "true" ] && [ "$MICROPHONE_DEVICE" != "-1" ]; then
+    echo "[voice] WebRTC capture must use MICROPHONE_DEVICE=-1 (the stable PulseAudio default); numeric PyAudio indices change across restarts." >&2
+    return 1
+  fi
+}
+
+clean_stale_fastdds_shm() {
+  local container="$1"
+  _ssh "docker exec ${container} bash -lc '
+    removed=0
+    for lock in /dev/shm/fastrtps_*_el; do
+      [ -e \"\$lock\" ] || continue
+      if flock -n \"\$lock\" true; then
+        segment=\${lock%_el}
+        rm -f -- \"\$segment\" \"\$lock\"
+        removed=\$((removed + 1))
+      fi
+    done
+    if [ \"\$removed\" -gt 0 ]; then
+      echo \"[voice] removed \$removed stale Fast DDS shared-memory segments\"
+    fi
+    usage=\$(df -P /dev/shm | awk \"NR == 2 {print \\\$5}\")
+    case \"\$usage\" in
+      9[0-9]%|100%)
+        echo \"[voice] /dev/shm remains critically full after safe cleanup: \$usage\" >&2
+        exit 1
+        ;;
+    esac
+  '"
+}
+
+wait_for_voice_ready() {
+  local container="$1" remote_env
+  echo "[voice] waiting for real microphone and Piper backends"
+  remote_env="CONTAINER=$(remote_quote "$container") \
+ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
+FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+DOCKER_WS=$(remote_quote "$DOCKER_WS") \
+AUDIO_OUTPUT_DEVICE=$(remote_quote "$AUDIO_OUTPUT_DEVICE") \
+VOICE_STARTUP_TIMEOUT_SEC=$(remote_quote "$VOICE_STARTUP_TIMEOUT_SEC") \
+ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+total_started=$SECONDS
+
+run_ros() {
+  local ros_setup="${ROS_SETUP//\'/}"
+  docker exec \
+    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+    -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+    "$CONTAINER" bash -lc "${ros_setup}; $1"
+}
+
+phase_started=$SECONDS
+if ! docker exec "$CONTAINER" test -s "$DOCKER_WS/install/.evo-source-revision"; then
+  echo "[voice] missing build revision marker; run ./scripts/robot.sh setup" >&2
+  exit 1
+fi
+current_revision="$(
+  docker exec "$CONTAINER" bash -lc \
+    "cd '$DOCKER_WS' && find src -type d \\( -name __pycache__ -o -name .pytest_cache \\) -prune -o -type f ! -name '*.pyc' -print0 | sort -z | xargs -0 sha256sum | sha256sum"
+)"
+built_revision="$(docker exec "$CONTAINER" cat "$DOCKER_WS/install/.evo-source-revision")"
+if [ "$current_revision" != "$built_revision" ]; then
+  echo "[voice] source differs from the installed workspace; run ./scripts/robot.sh setup" >&2
+  exit 1
+fi
+echo "[voice] build revision verified in $((SECONDS - phase_started))s"
+
+phase_started=$SECONDS
+default_sink="$(pactl info | awk -F': ' '/^Default Sink:/{print $2}')"
+default_source="$(pactl info | awk -F': ' '/^Default Source:/{print $2}')"
+if [ -z "$default_sink" ] || [ -z "$default_source" ]; then
+  echo "[voice] PulseAudio default sink/source is unavailable on the Jetson host" >&2
+  exit 1
+fi
+if [[ "$AUDIO_OUTPUT_DEVICE" == pulse/* ]]; then
+  requested_sink="${AUDIO_OUTPUT_DEVICE#pulse/}"
+  if ! pactl list short sinks | awk -v sink="$requested_sink" '$2 == sink { found=1 } END { exit !found }'; then
+    echo "[voice] configured PulseAudio sink is unavailable: ${requested_sink}" >&2
+    exit 1
+  fi
+fi
+audio_devices="$(docker exec "$CONTAINER" mpv --no-config --audio-device=help 2>&1)"
+if [ -n "$AUDIO_OUTPUT_DEVICE" ] && ! grep -Fq "'${AUDIO_OUTPUT_DEVICE}'" <<<"$audio_devices"; then
+  echo "[voice] mpv cannot see configured audio device: ${AUDIO_OUTPUT_DEVICE}" >&2
+  exit 1
+fi
+if ! grep -q "'pulse/" <<<"$audio_devices"; then
+  echo "[voice] container mpv cannot reach the host PulseAudio server" >&2
+  exit 1
+fi
+echo "[voice] PulseAudio and mpv verified in $((SECONDS - phase_started))s"
+
+phase_started=$SECONDS
+if ! run_ros \
+  "timeout -k 2s $((VOICE_STARTUP_TIMEOUT_SEC + 5))s ${DOCKER_WS}/install/evo_voice/lib/evo_voice/voice_readiness_checker --ros-args -p timeout_sec:=${VOICE_STARTUP_TIMEOUT_SEC}.0"; then
+  echo "[voice] readiness failed after ${VOICE_STARTUP_TIMEOUT_SEC}s; inspect ./scripts/robot.sh logs voice" >&2
+  exit 1
+fi
+echo "[voice] speech backends verified in $((SECONDS - phase_started))s"
+
+echo "[voice] ready after $((SECONDS - total_started))s: Piper, Faster-Whisper, microphone, PulseAudio, and build revision verified"
+REMOTE_SCRIPT
 }
 
 ensure_webrtc_microphone() {
@@ -731,7 +877,394 @@ validate_person_detection_config() {
   esac
 }
 
-# --- Cycle de vie des services ----------------------------------------------
+camera_topic_sample() {
+  local container="$1" topic="$2" timeout="${3:-5}" remote_env
+  remote_env="CONTAINER=$(remote_quote "$container") \
+TOPIC=$(remote_quote "$topic") \
+TIMEOUT_SEC=$(remote_quote "$timeout") \
+ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
+FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+probe_timeout=$(( ${TIMEOUT_SEC%.*} + 3 ))
+timeout -k 1s "${probe_timeout}s" docker exec -i \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  -e TOPIC="$TOPIC" \
+  -e TIMEOUT_SEC="$TIMEOUT_SEC" \
+  "$CONTAINER" bash -lc "${ROS_SETUP}; python3 -" <<'PY'
+import os
+import sys
+import time
+
+import rclpy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from sensor_msgs.msg import Image
+
+topic = os.environ["TOPIC"]
+timeout = float(os.environ["TIMEOUT_SEC"])
+received = False
+
+rclpy.init()
+node = rclpy.create_node("robot_camera_readiness_probe")
+qos = QoSProfile(depth=1)
+qos.reliability = ReliabilityPolicy.BEST_EFFORT
+qos.durability = DurabilityPolicy.VOLATILE
+
+def on_image(_msg):
+    global received
+    received = True
+
+node.create_subscription(Image, topic, on_image, qos)
+deadline = time.monotonic() + timeout
+try:
+    while rclpy.ok() and not received and time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+finally:
+    node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+
+sys.exit(0 if received else 1)
+PY
+REMOTE_SCRIPT
+}
+
+report_camera_failure() {
+  local container="$1" reason="$2" remote_env
+  echo "[camera] startup failed: ${reason}" >&2
+  remote_env="CONTAINER=$(remote_quote "$container") \
+SERVICE_LOG_DIR=$(remote_quote "$SERVICE_LOG_DIR")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT' >&2 || true
+set +e
+log_file="${SERVICE_LOG_DIR}/evo_camera.log"
+
+echo "[camera] topic snapshot:"
+docker exec "$CONTAINER" bash -lc \
+  'source /opt/ros/humble/setup.bash 2>/dev/null; ros2 topic list 2>/dev/null | grep -E "^/camera/(color|depth)/" || true' |
+  sed 's/^/  /'
+
+if [ -f "$log_file" ]; then
+  if grep -qE 'Current found device\(s\): \(0\)|No Device found|queryDevice :No Device found' "$log_file"; then
+    echo "[camera] Orbbec device was not detected. Check USB/power/cable and restart the camera stack."
+  fi
+  echo "[camera] end of evo_camera.log:"
+  tail -n 80 "$log_file" | sed 's/^/  /'
+else
+  echo "[camera] no captured camera log at ${log_file}"
+fi
+REMOTE_SCRIPT
+}
+
+wait_for_camera_ready() {
+  local container="$1" deadline color_ready=false depth_ready=false
+  echo "[camera] waiting for color/depth image topics"
+
+  if ! [[ "$CAMERA_STARTUP_TIMEOUT_SEC" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[camera] CAMERA_STARTUP_TIMEOUT_SEC must be a positive integer" >&2
+    return 1
+  fi
+
+  deadline=$((SECONDS + CAMERA_STARTUP_TIMEOUT_SEC))
+  while (( SECONDS < deadline )); do
+    if [ "$color_ready" != true ] && camera_topic_sample "$container" "$CAMERA_TOPIC" 4 >/dev/null 2>&1; then
+      color_ready=true
+      echo "[camera] color topic ready: ${CAMERA_TOPIC}"
+    fi
+    if [ "$PERSON_DETECTION_ENABLED" != "true" ]; then
+      depth_ready=true
+    elif [ "$depth_ready" != true ] && camera_topic_sample "$container" "$DEPTH_TOPIC" 4 >/dev/null 2>&1; then
+      depth_ready=true
+      echo "[camera] depth topic ready: ${DEPTH_TOPIC}"
+    fi
+
+    if [ "$color_ready" = true ] && [ "$depth_ready" = true ]; then
+      echo "[camera] ready: required image topics are publishing"
+      return 0
+    fi
+    sleep 1
+  done
+
+  local reason="missing required camera topics"
+  if [ "$color_ready" != true ] && [ "$depth_ready" != true ]; then
+    reason="missing color topic ${CAMERA_TOPIC} and depth topic ${DEPTH_TOPIC}"
+  elif [ "$color_ready" != true ]; then
+    reason="missing color topic ${CAMERA_TOPIC}"
+  elif [ "$depth_ready" != true ]; then
+    reason="missing depth topic ${DEPTH_TOPIC}"
+  fi
+  report_camera_failure "$container" "$reason"
+  return 1
+}
+
+person_detector_status_snapshot() {
+  local container="$1" timeout="${2:-8}" remote_env
+  remote_env="CONTAINER=$(remote_quote "$container") \
+TIMEOUT_SEC=$(remote_quote "$timeout") \
+ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
+FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+probe_timeout=$(( ${TIMEOUT_SEC%.*} + 3 ))
+timeout -k 1s "${probe_timeout}s" docker exec -i \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  -e TIMEOUT_SEC="$TIMEOUT_SEC" \
+  "$CONTAINER" bash -lc "${ROS_SETUP}; python3 -" <<'PY'
+import json
+import os
+import sys
+import time
+
+import rclpy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
+
+timeout = float(os.environ["TIMEOUT_SEC"])
+healthy_states = {"ready", "active", "detecting"}
+last_status = "status topic missing"
+done = False
+ok = False
+
+def describe(data):
+    payload = json.loads(data)
+    state = str(payload.get("state", ""))
+    message = str(payload.get("message", ""))
+    return state, f"state={state or '<missing>'} message={message}"
+
+def on_status(msg):
+    global done, last_status, ok
+    try:
+        state, status = describe(msg.data)
+    except Exception as exc:
+        last_status = f"invalid_status_json={exc}"
+        return
+    last_status = status
+    if state in healthy_states:
+        ok = True
+        done = True
+
+rclpy.init()
+node = rclpy.create_node("robot_person_detector_status_probe")
+qos = QoSProfile(depth=1)
+qos.reliability = ReliabilityPolicy.RELIABLE
+qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
+node.create_subscription(String, "/vision/people/detector_status", on_status, qos)
+
+deadline = time.monotonic() + timeout
+try:
+    while rclpy.ok() and not done and time.monotonic() < deadline:
+        rclpy.spin_once(node, timeout_sec=0.2)
+finally:
+    node.destroy_node()
+    if rclpy.ok():
+        rclpy.shutdown()
+
+print(last_status)
+sys.exit(0 if ok else 1)
+PY
+REMOTE_SCRIPT
+}
+
+person_detection_sample() {
+  local container="$1" timeout="${2:-3}" remote_env
+  remote_env="CONTAINER=$(remote_quote "$container") \
+TIMEOUT_SEC=$(remote_quote "$timeout") \
+ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
+FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+docker exec \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  "$CONTAINER" bash -lc \
+  "${ROS_SETUP}; timeout -k 1s ${TIMEOUT_SEC}s ros2 topic echo --once /vision/people/detections --field tracking_id 2>/dev/null"
+REMOTE_SCRIPT
+}
+
+wait_for_person_detection_ready() {
+  local container="$1" status detection
+  if [ "$PERSON_DETECTION_ENABLED" != "true" ]; then
+    echo "[vision] person detection is disabled; skipping readiness check"
+    return 0
+  fi
+
+  echo "[vision] waiting for person detector status"
+  if status="$(person_detector_status_snapshot "$container" "${PERSON_DETECTION_TIMEOUT_SEC:-30}")"; then
+    detection="$(person_detection_sample "$container" 2 2>/dev/null || true)"
+    if [ -n "$detection" ]; then
+      echo "[vision] person detector ready: ${status}; detection_seen=true"
+    else
+      echo "[vision] person detector ready: ${status}; detection_seen=false"
+    fi
+    return 0
+  fi
+
+  echo "[vision] person detector did not report a healthy status within ${PERSON_DETECTION_TIMEOUT_SEC:-30}s" >&2
+  echo "[vision] last detector status: ${status:-<none>}" >&2
+  echo "[vision] camera/depth topics were checked before vision startup; inspect current state with ./scripts/robot.sh doctor" >&2
+  echo "[vision] inspect: ./scripts/robot.sh logs --tail vision" >&2
+  return 1
+}
+
+# --- Doctor -------------------------------------------------------------------
+
+run_doctor() {
+  local container="$1" failed=0 line
+
+  _doctor_pass() { printf '  %-45s PASS\n' "$1"; }
+  _doctor_fail() { printf '  %-45s FAIL  %s\n' "$1" "$2"; failed=1; }
+
+  echo "doctor — reception robot readiness"
+  echo
+
+  # 1. SSH reachability
+  if _ssh true 2>/dev/null; then
+    _doctor_pass "SSH reachable (${JETSON_USER}@${JETSON_IP})"
+  else
+    _doctor_fail "SSH reachable" "${JETSON_USER}@${JETSON_IP} — unreachable"
+    echo
+    echo "doctor stopped: the Jetson is not reachable."
+    return 1
+  fi
+
+  # 2. Container running
+  if [ -n "$container" ]; then
+    _doctor_pass "evo-ros container (${container})"
+  else
+    _doctor_fail "evo-ros container" "not running or not found"
+    echo
+    echo "doctor stopped: the evo-ros Docker container must be running."
+    return 1
+  fi
+
+  # 3. MCU alive
+  if mcu_is_alive "$container"; then
+    _doctor_pass "MCU publishing ${MCU_PROBE_TOPIC}"
+  else
+    _doctor_fail "MCU publishing ${MCU_PROBE_TOPIC}" "silent; run ./scripts/robot.sh mcu"
+  fi
+
+  # 4. Person detection model
+  if [ "$PERSON_DETECTION_ENABLED" = "true" ]; then
+    if [ -n "$PERSON_DETECTION_MODEL_PATH" ] && \
+       _ssh "docker exec ${container} test -s $(remote_quote "$PERSON_DETECTION_MODEL_PATH")"; then
+      _doctor_pass "detector model present"
+    else
+      _doctor_fail "detector model present" "${PERSON_DETECTION_MODEL_PATH:-<not configured>}"
+    fi
+  else
+    _doctor_pass "detector model (PERSON_DETECTION_ENABLED=false)"
+  fi
+
+  # 5. Camera image streams
+  local camera_color_ok=false camera_depth_ok=false
+  if camera_topic_sample "$container" "$CAMERA_TOPIC" 5 >/dev/null 2>&1; then
+    camera_color_ok=true
+    _doctor_pass "camera color topic (${CAMERA_TOPIC})"
+  else
+    _doctor_fail "camera color topic" "${CAMERA_TOPIC} is not publishing"
+  fi
+
+  if [ "$PERSON_DETECTION_ENABLED" != "true" ]; then
+    camera_depth_ok=true
+    _doctor_pass "camera depth topic (not required)"
+  elif camera_topic_sample "$container" "$DEPTH_TOPIC" 5 >/dev/null 2>&1; then
+    camera_depth_ok=true
+    _doctor_pass "camera depth topic (${DEPTH_TOPIC})"
+  else
+    _doctor_fail "camera depth topic" "${DEPTH_TOPIC} is not publishing"
+  fi
+
+  # 6. Person detector status or an actual detection.
+  if [ "$PERSON_DETECTION_ENABLED" = "true" ]; then
+    local detector_status detection
+    if [ "$camera_color_ok" != true ] || [ "$camera_depth_ok" != true ]; then
+      _doctor_fail "person detector ready" "camera topics are not ready"
+    elif detector_status="$(person_detector_status_snapshot "$container" 8 2>/dev/null)"; then
+      detection="$(person_detection_sample "$container" 2 2>/dev/null || true)"
+      if [ -n "$detection" ]; then
+        _doctor_pass "person detector ready (${detector_status}; detection_seen=true)"
+      else
+        _doctor_pass "person detector ready (${detector_status}; detection_seen=false)"
+      fi
+    else
+      _doctor_fail "person detector ready" "${detector_status:-status topic missing}"
+    fi
+  else
+    _doctor_pass "person detector (disabled)"
+  fi
+
+  # 7. AMCL pose
+  local amcl_snapshot
+  if amcl_snapshot="$(amcl_readiness_snapshot "$container" 5 2>/dev/null)"; then
+    _doctor_pass "AMCL localized (${amcl_snapshot})"
+  else
+    _doctor_fail "AMCL localized" "${amcl_snapshot:-pose missing} (limit ${REAL_MAX_LOCALIZATION_XY_VARIANCE})"
+  fi
+
+  # 8. pyzbar QR decoder
+  if _ssh "docker exec ${container} python3 -c 'from pyzbar.pyzbar import decode; print(\"ok\")' 2>/dev/null" | grep -q ok; then
+    _doctor_pass "pyzbar QR decoder"
+  else
+    _doctor_fail "pyzbar QR decoder" "import failed; rebuild the evo-ros image"
+  fi
+
+  # 9. Voice PulseAudio and model files
+  local sink source
+  sink="$(_ssh 'pactl info 2>/dev/null | awk -F": " "/Default Sink:/{print \$2}"' 2>/dev/null || true)"
+  source="$(_ssh 'pactl info 2>/dev/null | awk -F": " "/Default Source:/{print \$2}"' 2>/dev/null || true)"
+  if [ -n "$sink" ] && [ -n "$source" ]; then
+    _doctor_pass "PulseAudio sink/source"
+  else
+    _doctor_fail "PulseAudio sink/source" "default sink or source is missing"
+  fi
+
+  if [ -n "$PIPER_MODEL_PATH" ] && \
+     _ssh "docker exec ${container} test -f $(remote_quote "$PIPER_MODEL_PATH")"; then
+    _doctor_pass "Piper model (${PIPER_MODEL_PATH##*/})"
+  else
+    _doctor_fail "Piper model" "${PIPER_MODEL_PATH:-<not configured>}"
+  fi
+
+  if [ -n "$STT_MODEL_PATH" ] && \
+     _ssh "docker exec ${container} test -s $(remote_quote "${STT_MODEL_PATH}/model.bin")"; then
+    _doctor_pass "STT model (${STT_MODEL_PATH##*/})"
+  else
+    _doctor_fail "STT model" "${STT_MODEL_PATH:-<not configured>}/model.bin"
+  fi
+
+  # 10. Laravel reachable
+  local validation_url
+  if validation_url="$(resolve_reception_validation_url 2>/dev/null)"; then
+    if curl --silent --output /dev/null --connect-timeout 3 --max-time 5 "$validation_url" 2>/dev/null; then
+      _doctor_pass "Laravel validation endpoint"
+    else
+      _doctor_fail "Laravel validation endpoint" "${validation_url} — unreachable"
+    fi
+  else
+    _doctor_fail "Laravel validation endpoint" "URL could not be resolved"
+  fi
+
+  echo
+  if [ "$failed" -eq 0 ]; then
+    echo "doctor: all checks passed — the robot is ready for the reception demo."
+  else
+    echo "doctor: one or more checks failed — see FAIL lines above."
+  fi
+  return "$failed"
+}
 
 require_web_port_available() {
   local container="$1" remote_env
@@ -774,20 +1307,26 @@ REMOTE_SCRIPT
 # remote_quote (env) + printf %q (commande docker) côté distant : robuste face aux args
 # ROS (`:=`), aux espaces et au sourcing multi-ligne — fini les quotes imbriquées.
 start_service() {
-  local name="$1" container="$2" cmd remote_env
+  local name="$1" container="$2" cmd remote_env probe_status
   if [ "$name" = "teleop" ] && \
-     _ssh "tmux has-session -t evo_nav 2>/dev/null || tmux has-session -t evo_slam 2>/dev/null"; then
+     _ssh_test "tmux has-session -t evo_nav 2>/dev/null || tmux has-session -t evo_slam 2>/dev/null"; then
     echo "[start] teleop velocity pipeline is already provided by the active Nav2/SLAM service"
     return 0
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
   if { [ "$name" = "nav" ] || [ "$name" = "slam" ]; } && \
-     _ssh "tmux has-session -t evo_teleop 2>/dev/null"; then
+     _ssh_test "tmux has-session -t evo_teleop 2>/dev/null"; then
     echo "[start] replacing the standalone teleop pipeline with ${name}"
     stop_service teleop "$container"
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
-  if _ssh "tmux has-session -t evo_${name} 2>/dev/null"; then
+  if _ssh_test "tmux has-session -t evo_${name} 2>/dev/null"; then
     echo "[start] evo_${name} already running"
     return 0
+  elif probe_status=$?; [ "$probe_status" -eq 2 ]; then
+    return 1
   fi
   if [ "$name" = "web" ]; then
     require_web_port_available "$container" || return 1
@@ -837,131 +1376,251 @@ echo "[start] persistent log: ${log_file}"
 REMOTE_SCRIPT
 }
 
-# A live tmux session does not prove that Fast DDS discovery works. This check
-# reads the dialogue manager's transient-local status and verifies the
-# orchestrator's non-overridable stationary safety parameters.
-wait_for_stationary_reception_ready() {
-  local container="$1" profile="$2" expected_backend_mock remote_env
-  if [ "$profile" = "stationary-reception-real" ]; then
-    expected_backend_mock=false
-  else
-    expected_backend_mock=true
+# Read the reception waypoint from the configured YAML and publish it as the
+# AMCL initial pose so the operator never needs to use the dashboard's
+# "2D Pose Estimate" tool.  The waypoint must contain a `reception` entry with
+# x, y, and yaw in the map frame.
+publish_initial_pose_from_reception() {
+  local container="$1"
+  local show_hint="${2:-false}"
+
+  if [ "${INITIAL_POSE_AUTO_ENABLED:-true}" != "true" ]; then
+    if [ "$show_hint" = "true" ]; then
+      echo "[nav] auto initial pose is disabled (INITIAL_POSE_AUTO_ENABLED=false)"
+      echo "[nav] set the verified initial pose in the dashboard before the AMCL readiness check"
+    fi
+    return 0
   fi
-  echo "[stationary] waiting for workflow and forced-mock navigation"
+
+  if [ -z "${RECEPTION_WAYPOINT_CONFIG_PATH:-}" ]; then
+    echo "[pose] no reception waypoint configured; skipping auto initial pose" >&2
+    return 0
+  fi
+
+  local remote_env
   remote_env="CONTAINER=$(remote_quote "$container") \
-EXPECTED_BACKEND_MOCK=$(remote_quote "$expected_backend_mock") \
+RECEPTION_WAYPOINT_CONFIG_PATH=$(remote_quote "$RECEPTION_WAYPOINT_CONFIG_PATH")"
+  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+set -euo pipefail
+
+if ! docker exec "$CONTAINER" test -f "$RECEPTION_WAYPOINT_CONFIG_PATH"; then
+  echo "[pose] reception waypoint file is missing in container: ${RECEPTION_WAYPOINT_CONFIG_PATH}" >&2
+  exit 1
+fi
+
+pose_json="$(docker exec -i "$CONTAINER" python3 - "$RECEPTION_WAYPOINT_CONFIG_PATH" <<'PY'
+import json
+import math
+import sys
+
+import yaml
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = yaml.safe_load(handle) or {}
+
+frame_id = str(data.get("frame_id", ""))
+if frame_id != "map":
+    raise SystemExit(f"waypoint file must use frame_id=map, got {frame_id!r}")
+
+waypoints = data.get("waypoints")
+if not isinstance(waypoints, dict) or "reception" not in waypoints:
+    raise SystemExit("waypoint file must define waypoints.reception")
+
+reception = waypoints["reception"]
+x = float(reception["x"])
+y = float(reception["y"])
+yaw = float(reception["yaw"])
+if not all(math.isfinite(value) for value in (x, y, yaw)):
+    raise SystemExit("reception waypoint x/y/yaw must be finite numbers")
+
+qz = math.sin(yaw / 2.0)
+qw = math.cos(yaw / 2.0)
+message = {
+    "header": {"stamp": {"sec": 0, "nanosec": 0}, "frame_id": "map"},
+    "pose": {
+        "pose": {
+            "position": {"x": x, "y": y, "z": 0.0},
+            "orientation": {"x": 0.0, "y": 0.0, "z": qz, "w": qw},
+        },
+        "covariance": [
+            0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.05, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0, 0.0, 0.0, 0.05,
+        ],
+    },
+}
+print(f"[pose] parsed reception waypoint: frame_id=map x={x:.3f} y={y:.3f} yaw={yaw:.3f}", file=sys.stderr)
+print(json.dumps(message, separators=(",", ":")))
+PY
+)"
+
+echo "[pose] publishing AMCL initial pose from reception waypoint"
+printf '%s\n' "$pose_json" | docker exec -i "$CONTAINER" bash -lc '
+source /opt/ros/humble/setup.bash
+ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped --qos-reliability reliable --qos-durability transient_local -
+'
+REMOTE_SCRIPT
+}
+
+amcl_readiness_snapshot() {
+  local container="$1" timeout="${2:-5}" remote_env
+  remote_env="CONTAINER=$(remote_quote "$container") \
 ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
 FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+MAX_LOCALIZATION_XY_VARIANCE=$(remote_quote "$REAL_MAX_LOCALIZATION_XY_VARIANCE") \
+TIMEOUT_SEC=$(remote_quote "$timeout") \
 ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
   _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
 run_ros() {
+  local ros_setup="${ROS_SETUP//\'/}"
   docker exec \
     -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
     -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; $1"
+    -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+    "$CONTAINER" bash -lc "${ros_setup}; $1"
 }
 
-if ! run_ros "timeout -k 2s 15s ros2 topic echo /reception/workflow/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] /reception/workflow/status was not received." >&2
-  echo "[stationary] ROS discovery may be stale; stop the profile and restart the evo-ros container before retrying." >&2
-  exit 1
-fi
-if ! run_ros "timeout -k 2s 180s ros2 topic echo /voice/tts/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] TTS did not finish loading or pre-generating phrases." >&2
-  echo "[stationary] Inspect: ./scripts/robot.sh logs voice" >&2
-  exit 1
-fi
-if ! run_ros "timeout -k 2s 60s ros2 topic echo /voice/stt/status --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[stationary] STT did not finish loading its local model." >&2
-  echo "[stationary] Inspect: ./scripts/robot.sh logs voice" >&2
-  exit 1
-fi
+parse_amcl_sample() {
+  python3 -c '
+import math
+import sys
 
-mock_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node mock_navigation")"
-allow_real_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node allow_real_navigation")"
-backend_mock="$(run_ros "timeout -k 2s 8s ros2 param get /qr_reservation_bridge_node mock_mode")"
-nodes="$(run_ros "timeout -k 2s 10s ros2 node list --no-daemon --spin-time 2")"
-for node in /qr_scanner_node /qr_reservation_bridge_node /tts_node /stt_node /intent_detector_node /dialogue_manager_node /human_approach_node /navigation_orchestrator_node; do
-  node_count="$(printf '%s\n' "$nodes" | grep -cx "$node" || true)"
-  if [ "$node_count" -eq 0 ]; then
-    echo "[stationary] required node is missing: ${node}" >&2
-    exit 1
+import yaml
+
+try:
+    data = yaml.safe_load(sys.stdin.read()) or {}
+    frame_id = str(data.get("header", {}).get("frame_id", ""))
+    covariance = data.get("pose", {}).get("covariance", [])
+    if len(covariance) < 8:
+        print("pose missing")
+        raise SystemExit(1)
+    x_var = float(covariance[0])
+    y_var = float(covariance[7])
+    limit = float(sys.argv[1])
+    ok = (
+        frame_id == "map"
+        and math.isfinite(x_var)
+        and math.isfinite(y_var)
+        and 0.0 <= x_var <= limit
+        and 0.0 <= y_var <= limit
+    )
+    display_frame = frame_id if frame_id else "<missing>"
+    print(f"frame_id={display_frame} x_var={x_var:.6g} y_var={y_var:.6g}")
+    raise SystemExit(0 if ok else 1)
+except Exception as exc:
+    print(f"parse_error={exc}")
+    raise SystemExit(2)
+' "$MAX_LOCALIZATION_XY_VARIANCE"
+}
+
+deadline=$((SECONDS + TIMEOUT_SEC))
+last_status="pose missing"
+while (( SECONDS < deadline )); do
+  set +e
+  sample="$(run_ros "timeout -k 1s 4s ros2 topic echo /amcl_pose --once 2>/dev/null" 2>/dev/null)"
+  sample_rc=$?
+  set -e
+  if [ "$sample_rc" -eq 0 ] && [ -n "$sample" ]; then
+    set +e
+    status="$(printf '%s\n' "$sample" | parse_amcl_sample)"
+    rc=$?
+    set -e
+    last_status="$status"
+    if [ "$rc" -eq 0 ]; then
+      printf '%s\n' "$status"
+      exit 0
+    fi
   fi
-  if [ "$node_count" -ne 1 ]; then
-    echo "[stationary] duplicate required node detected: ${node} (${node_count})" >&2
-    echo "[stationary] stop all services and restart the ROS container." >&2
-    exit 1
-  fi
+  sleep 1
 done
-case "$mock_navigation" in
-  *"Boolean value is: True"*) ;;
-  *) echo "[stationary] mock_navigation is not true: ${mock_navigation}" >&2; exit 1 ;;
-esac
-case "$allow_real_navigation" in
-  *"Boolean value is: False"*) ;;
-  *) echo "[stationary] allow_real_navigation is not false: ${allow_real_navigation}" >&2; exit 1 ;;
-esac
-case "$EXPECTED_BACKEND_MOCK:$backend_mock" in
-  true:*"Boolean value is: True"*) ;;
-  false:*"Boolean value is: False"*) ;;
-  *) echo "[stationary] reservation backend mode mismatch: ${backend_mock}" >&2; exit 1 ;;
-esac
 
-echo "[stationary] ready: workflow available, backend_mock=${EXPECTED_BACKEND_MOCK}, mock navigation forced"
+printf '%s\n' "$last_status"
+exit 1
 REMOTE_SCRIPT
 }
 
-wait_for_real_reception_navigation_ready() {
+wait_for_amcl_localized() {
+  local container="$1" snapshot
+  echo "[nav] waiting for AMCL localization from the reception initial pose"
+
+  if [ "${INITIAL_POSE_AUTO_ENABLED:-true}" != "true" ]; then
+    publish_initial_pose_from_reception "$container" true
+    if snapshot="$(amcl_readiness_snapshot "$container" "$REAL_NAVIGATION_TIMEOUT_SEC")"; then
+      echo "[nav] localized: ${snapshot}"
+      return 0
+    fi
+    echo "[nav] AMCL localization failed: ${snapshot}" >&2
+    return 1
+  fi
+
+  publish_initial_pose_from_reception "$container" || return 1
+  if snapshot="$(amcl_readiness_snapshot "$container" 15)"; then
+    echo "[nav] localized: ${snapshot}"
+    return 0
+  fi
+
+  echo "[nav] AMCL not localized yet (${snapshot}); re-publishing the reception initial pose once"
+  publish_initial_pose_from_reception "$container" || return 1
+  if snapshot="$(amcl_readiness_snapshot "$container" "$REAL_NAVIGATION_TIMEOUT_SEC")"; then
+    echo "[nav] localized: ${snapshot}"
+    return 0
+  fi
+
+  echo "[nav] AMCL localization failed after initial pose retry: ${snapshot}" >&2
+  echo "[nav] inspect: ./scripts/robot.sh logs --tail nav" >&2
+  return 1
+}
+
+wait_for_reception_navigation_ready() {
   local container="$1" remote_env
-  echo "[demo] waiting for Home map, AMCL, E-stop, and real reception navigation"
-  echo "[demo] set the reviewed initial pose now if AMCL is not initialized"
+  echo "[nav] verifying map, localization, E-stop, and real reception navigation"
+
+  if [ "${INITIAL_POSE_AUTO_ENABLED:-true}" != "true" ]; then
+    echo "[nav] INITIAL_POSE_AUTO_ENABLED is false — set the initial pose in the dashboard"
+  fi
+
   remote_env="CONTAINER=$(remote_quote "$container") \
 ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
 FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
+RMW_IMPLEMENTATION=$(remote_quote "$RMW_IMPLEMENTATION") \
+DOCKER_WS=$(remote_quote "$DOCKER_WS") \
+MAX_LOCALIZATION_XY_VARIANCE=$(remote_quote "$REAL_MAX_LOCALIZATION_XY_VARIANCE") \
 ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
-  _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
+  if _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
-run_ros() {
-  docker exec \
-    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; $1"
-}
-
-mock_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node mock_navigation")"
-allow_real_navigation="$(run_ros "timeout -k 2s 8s ros2 param get /navigation_orchestrator_node allow_real_navigation")"
-case "$mock_navigation" in
-  *"Boolean value is: False"*) ;;
-  *) echo "[demo] real orchestrator still has mock_navigation enabled: ${mock_navigation}" >&2; exit 1 ;;
-esac
-case "$allow_real_navigation" in
-  *"Boolean value is: True"*) ;;
-  *) echo "[demo] real navigation authorization is not active: ${allow_real_navigation}" >&2; exit 1 ;;
-esac
-
-if ! run_ros "timeout -k 2s 20s ros2 topic echo /map --once --qos-durability transient_local --qos-reliability reliable" >/dev/null; then
-  echo "[demo] reviewed map is not publishing." >&2
-  exit 1
-fi
-if ! run_ros "timeout -k 2s 120s ros2 topic echo /amcl_pose --once --qos-durability volatile --qos-reliability reliable" >/dev/null; then
-  echo "[demo] AMCL pose is unavailable; set and verify the initial pose." >&2
-  exit 1
-fi
-estop="$(run_ros "timeout -k 2s 20s ros2 topic echo /e_stop_active --once --qos-durability volatile --qos-reliability reliable")"
-case "$estop" in
-  *"data: false"*) ;;
-  *) echo "[demo] E-stop is active or unavailable: ${estop}" >&2; exit 1 ;;
-esac
-if ! run_ros "timeout -k 2s 10s ros2 action list" | grep -qx "/reception/guide_to_destination"; then
-  echo "[demo] reception navigation action is unavailable." >&2
-  exit 1
+if docker exec \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  -e RMW_IMPLEMENTATION="$RMW_IMPLEMENTATION" \
+  "$CONTAINER" bash -lc \
+  "${ROS_SETUP}; ${DOCKER_WS}/install/evo_navigation/lib/evo_navigation/reception_nav_readiness_checker --timeout-sec 45 --progress-sec 5 --max-localization-xy-variance ${MAX_LOCALIZATION_XY_VARIANCE}"; then
+  exit 0
 fi
 
-echo "[demo] real reception navigation ready: map, AMCL, E-stop, and action accepted"
+echo "[nav] real reception navigation readiness failed." >&2
+if ! tmux has-session -t evo_reception_nav 2>/dev/null; then
+  echo "[nav] evo_reception_nav tmux session is not running." >&2
+fi
+echo "[nav] end of reception navigation log:" >&2
+tail -n 80 /home/jetson/evo_logs/evo_reception_nav.log >&2 2>/dev/null || \
+  echo "[nav] reception navigation log is unavailable." >&2
+exit 1
 REMOTE_SCRIPT
+  then
+    return 0
+  fi
+
+  echo "[nav] reception navigation readiness check failed." >&2
+  echo "[nav] inspect: ./scripts/robot.sh logs --tail reception_nav" >&2
+  return 1
 }
 
 # Verify that the web launch did not survive with rosbridge while its required
@@ -1087,7 +1746,8 @@ topic_count() {
   docker exec \
     -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
     -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info ${topic} 2>/dev/null" \
+    "$CONTAINER" bash -lc \
+    "${ROS_SETUP}; timeout -k 1s 4s ros2 topic info --no-daemon --spin-time 2 ${topic} 2>/dev/null" \
     | awk -v label="$kind count:" '$0 ~ label {print $3}'
 }
 
@@ -1152,108 +1812,31 @@ REMOTE_SCRIPT
 # session only proves that ros2 launch is alive; lifecycle configuration can
 # still have failed while leaving every process present in the ROS graph.
 wait_for_navigation_ready() {
-  local container="$1" remote_env
+  local container="$1" remote_env collision_arg
   echo "[nav] waiting for Nav2 lifecycle nodes and velocity routing"
-  echo "[nav] set the verified initial pose in the dashboard if AMCL has not been initialized"
+  collision_arg=""
+  if [ "$NAV_USE_COLLISION_MONITOR" = "true" ]; then
+    collision_arg="--require-collision-monitor"
+  fi
   remote_env="CONTAINER=$(remote_quote "$container") \
 ROS_DOMAIN_ID=$(remote_quote "$ROS_DOMAIN_ID") \
 FASTDDS_BUILTIN_TRANSPORTS=$(remote_quote "$FASTDDS_BUILTIN_TRANSPORTS") \
-NAV_USE_COLLISION_MONITOR=$(remote_quote "$NAV_USE_COLLISION_MONITOR") \
+COLLISION_ARG=$(remote_quote "$collision_arg") \
 ROS_SETUP=$(remote_quote "$(_ros_prelude)")"
   _ssh "${remote_env} bash -s" <<'REMOTE_SCRIPT'
 set -euo pipefail
 
-nodes="map_server amcl controller_server smoother_server planner_server behavior_server bt_navigator waypoint_follower velocity_smoother global_costmap/global_costmap"
-if [ "$NAV_USE_COLLISION_MONITOR" = "true" ]; then
-  nodes="${nodes} collision_monitor"
+if docker exec \
+  -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
+  -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
+  "$CONTAINER" bash -lc \
+  "${ROS_SETUP}; ros2 run evo_navigation nav_readiness_checker \
+    --timeout-sec 115 --progress-sec 10 ${COLLISION_ARG}"; then
+  echo "[nav] ready: lifecycle active, map and validator available, single safe /cmd_vel publisher"
+  exit 0
 fi
-deadline=$((SECONDS + 120))
-next_progress=$SECONDS
-lifecycle_state="starting"
-publishers=0
-map_publishers=0
-costmap_ready=no
-validator_ready=no
-cmd_vel_publishers=0
-while (( SECONDS < deadline )); do
-  ready=true
-  lifecycle_state=active
-  for node in $nodes; do
-    state="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 lifecycle get /${node} 2>/dev/null" || true)"
-    case "$state" in
-      active*) ;;
-      *)
-        ready=false
-        lifecycle_state="/${node}: ${state:-unavailable}"
-        break
-        ;;
-    esac
-  done
 
-  if [ "$ready" = true ]; then
-    publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /cmd_vel_nav_raw 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    map_publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /map 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    costmap_ready="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc \
-      "${ROS_SETUP}; timeout -k 1s 3s ros2 topic echo /global_costmap/costmap --once \
-        --field header --qos-reliability reliable \
-        --qos-durability transient_local >/dev/null 2>&1 && echo yes" \
-      || true)"
-    validator_ready="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc \
-      "${ROS_SETUP}; ros2 node list 2>/dev/null | grep -qx /navigation_goal_validator && echo yes" \
-      || true)"
-    cmd_vel_publishers="$(docker exec \
-      -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-      -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-      "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 topic info /cmd_vel 2>/dev/null" \
-      | awk '/Publisher count:/{print $3}' || true)"
-    if [ "${publishers:-0}" -gt 0 ] && \
-       [ "${map_publishers:-0}" -gt 0 ] && \
-       [ "$costmap_ready" = "yes" ] && \
-       [ "${cmd_vel_publishers:-0}" -eq 1 ] && \
-       [ "$validator_ready" = "yes" ]; then
-      echo "[nav] ready: lifecycle active, live costmap and validator available, single safe /cmd_vel publisher"
-      exit 0
-    fi
-  fi
-
-  if (( SECONDS >= next_progress )); then
-    remaining=$((deadline - SECONDS))
-    (( remaining < 0 )) && remaining=0
-    echo "[nav] still waiting (${remaining}s): lifecycle=${lifecycle_state}; map=${map_publishers:-0}; costmap=${costmap_ready:-no}; validator=${validator_ready:-no}; cmd_vel_nav_raw=${publishers:-0}; cmd_vel=${cmd_vel_publishers:-0}"
-    next_progress=$((SECONDS + 10))
-  fi
-  sleep 1
-done
-
-echo "[nav] startup failed: Nav2 did not become ready within 120 seconds" >&2
-echo "  last readiness state: lifecycle=${lifecycle_state}; map=${map_publishers:-0}; costmap=${costmap_ready:-no}; validator=${validator_ready:-no}; cmd_vel_nav_raw=${publishers:-0}; cmd_vel=${cmd_vel_publishers:-0}" >&2
-for node in $nodes; do
-  printf "  %-36s " "/${node}"
-  docker exec \
-    -e ROS_DOMAIN_ID="$ROS_DOMAIN_ID" \
-    -e FASTDDS_BUILTIN_TRANSPORTS="$FASTDDS_BUILTIN_TRANSPORTS" \
-    "$CONTAINER" bash -lc "${ROS_SETUP}; ros2 lifecycle get /${node} 2>/dev/null" \
-    || echo "unavailable"
-done
-echo "  /global_costmap/costmap must publish a complete OccupancyGrid message." >&2
-echo "  Check its publisher and data rate inside the ROS container if unavailable." >&2
+echo "[nav] startup failed: Nav2 did not become ready within 115 seconds" >&2
 echo "Inspect: ./scripts/robot.sh logs nav" >&2
 exit 1
 REMOTE_SCRIPT
@@ -1292,6 +1875,32 @@ stop_service() {
       for sig in TERM KILL; do
         pkill -\$sig -f \"[w]eb_server_node\" 2>/dev/null || true
         pkill -\$sig -f \"[a]rm_command_relay_node\" 2>/dev/null || true
+        sleep 1
+      done
+    '"
+  fi
+  # Recover vision nodes orphaned by an interrupted launch or by a vanished
+  # tmux parent. Stale detector/status publishers make readiness probes lie.
+  if [ "$name" = "vision" ]; then
+    _ssh "docker exec ${container} bash -lc '
+      for sig in TERM KILL; do
+        pkill -\$sig -f \"[q]r_scanner_node\" 2>/dev/null || true
+        pkill -\$sig -f \"[d]epth_obstacle_scan_node\" 2>/dev/null || true
+        pkill -\$sig -f \"[o]bject_detector_node\" 2>/dev/null || true
+        sleep 1
+      done
+    '"
+  fi
+  # Recover voice nodes and readiness probes orphaned by a failed/aborted
+  # docker exec. They are exclusive to the evo_voice service, and leaving
+  # them alive makes every subsequent model startup slower.
+  if [ "$name" = "voice" ]; then
+    _ssh "docker exec ${container} bash -lc '
+      for sig in TERM KILL; do
+        pkill -\$sig -f \"[t]ts_node\" 2>/dev/null || true
+        pkill -\$sig -f \"[s]tt_node\" 2>/dev/null || true
+        pkill -\$sig -f \"[i]ntent_detector_node\" 2>/dev/null || true
+        pkill -\$sig -f \"[v]oice_readiness_checker\" 2>/dev/null || true
         sleep 1
       done
     '"

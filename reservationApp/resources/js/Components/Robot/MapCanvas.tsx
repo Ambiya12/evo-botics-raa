@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import type { NavPath, OccupancyGrid, RobotPose } from './types';
+import type { NavPath, OccupancyGrid, RobotPose, Waypoint } from './types';
 
 type Props = {
     costmap?: OccupancyGrid | null;
     map: OccupancyGrid | null;
     path: NavPath | null;
     pose: RobotPose | null;
+    waypoints?: Waypoint[];
     onGoal?: (x: number, y: number) => void;
 };
 
@@ -17,7 +18,7 @@ type Viewport = {
     width: number;
 };
 
-export default function MapCanvas({ costmap, map, onGoal, path, pose }: Props) {
+export default function MapCanvas({ costmap, map, onGoal, path, pose, waypoints = [] }: Props) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const viewportRef = useRef<Viewport | null>(null);
@@ -51,7 +52,7 @@ export default function MapCanvas({ costmap, map, onGoal, path, pose }: Props) {
 
     useEffect(() => {
         drawMap();
-    }, [costmap, map, path, pose, selectedPoint, showSafetyCosts, sizeVersion]);
+    }, [costmap, map, path, pose, selectedPoint, showSafetyCosts, sizeVersion, waypoints]);
 
     const mapToCanvas = (x: number, y: number, viewport: Viewport) => {
         if (!map) return null;
@@ -201,6 +202,56 @@ export default function MapCanvas({ costmap, map, onGoal, path, pose }: Props) {
                 ctx.stroke();
             }
         }
+
+        waypoints.forEach((waypoint) => {
+            const point = mapToCanvas(waypoint.x, waypoint.y, viewport);
+            if (
+                !point
+                || point.x < offsetX
+                || point.x > offsetX + mapPixelWidth
+                || point.y < offsetY
+                || point.y > offsetY + mapPixelHeight
+            ) {
+                return;
+            }
+
+            ctx.save();
+            ctx.font = '600 12px system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            const horizontalPadding = 8;
+            const labelHeight = 24;
+            const labelWidth = ctx.measureText(waypoint.name).width + horizontalPadding * 2;
+            const labelX = Math.min(
+                Math.max(point.x, offsetX + labelWidth / 2 + 4),
+                offsetX + mapPixelWidth - labelWidth / 2 - 4,
+            );
+            const labelY = Math.max(point.y - 26, offsetY + labelHeight / 2 + 4);
+
+            ctx.fillStyle = 'rgba(30, 64, 175, 0.94)';
+            ctx.beginPath();
+            ctx.roundRect(
+                labelX - labelWidth / 2,
+                labelY - labelHeight / 2,
+                labelWidth,
+                labelHeight,
+                6,
+            );
+            ctx.fill();
+
+            ctx.fillStyle = '#2563eb';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(waypoint.name, labelX, labelY);
+            ctx.restore();
+        });
 
         if (pose) {
             const point = mapToCanvas(pose.x, pose.y, viewport);

@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from http.client import responses
 import json
-import time
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -16,12 +14,21 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 from evo_reception.qr_integration import (
+    QrScanGate,
     QrValidationOutcome,
+    ScanDecision,
+    _ensure_outcome_mapping,
     extract_decoded_text,
     outcome_from_error_code,
     successful_validation_data,
     validate_backend_configuration,
 )
+
+_STATUS_LABELS: dict[int, str] = {
+    400: "Bad request",
+    404: "Reservation not found",
+    422: "Validation error",
+}
 
 
 @dataclass(frozen=True)
@@ -58,28 +65,11 @@ class QrReservationBridgeNode(Node):
         self.enable_legacy_topic_bridge = bool(
             self.declare_parameter("enable_legacy_topic_bridge", False).value
         )
-        self.mock_mode = bool(
-            self.declare_parameter("mock_mode", True).value
-        )
         self.validation_url = validate_backend_configuration(
-            self.mock_mode,
             str(self.validation_url),
             self.request_timeout_sec,
             self.duplicate_cooldown_sec,
         )
-        mock_outcome_value = str(
-            self.declare_parameter("mock_outcome", "valid").value
-        ).strip().lower()
-        self.mock_destination_id = str(
-            self.declare_parameter("mock_destination_id", "mock-room").value
-        ).strip()
-        try:
-            self.mock_outcome = QrValidationOutcome(mock_outcome_value)
-        except ValueError as exc:
-            raise ValueError(
-                "'mock_outcome' must be valid, invalid, expired, duplicate, "
-                "or unavailable"
-            ) from exc
 
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
         self.create_service(
@@ -90,9 +80,7 @@ class QrReservationBridgeNode(Node):
                 String, self.qr_detections_topic, self.on_qr_detection, 10
             )
         self.validation_executor = ThreadPoolExecutor(max_workers=1)
-        self.in_flight = False
-        self.last_payload = ""
-        self.last_payload_at = 0.0
+        self.scan_gate = QrScanGate(self.duplicate_cooldown_sec)
 
         self.publish_status(
             "waiting",
@@ -101,41 +89,27 @@ class QrReservationBridgeNode(Node):
         self.get_logger().info(
             f"QR reservation bridge serving {self.validation_service}, "
             f"legacy_topic_bridge={self.enable_legacy_topic_bridge}, "
-            f"mock_mode={self.mock_mode}, "
-            f"backend={'mock' if self.mock_mode else 'configured-real'}"
+            f"backend={self.validation_url}"
         )
 
     def on_qr_detection(self, msg: String) -> None:
         decoded_text = extract_decoded_text(msg.data)
         if not decoded_text:
-            self.publish_status(
-                "error",
-                "QR code could not be decoded.",
-                error_code="invalid_qr",
-            )
+            self.publish_status("error", "QR code could not be decoded.", error_code="invalid_qr")
             return
 
-        now = time.monotonic()
-        if (
-            decoded_text == self.last_payload
-            and now - self.last_payload_at < self.duplicate_cooldown_sec
-        ):
+        acceptance = self.scan_gate.accept(msg.data, "WAITING_FOR_QR", qr_prompt_completed=True)
+        if acceptance.decision in {ScanDecision.IGNORED_STATE, ScanDecision.DUPLICATE, ScanDecision.BUSY}:
             return
 
-        if self.in_flight:
-            return
-
-        self.in_flight = True
-        self.last_payload = decoded_text
-        self.last_payload_at = now
         self.publish_status("scanned", "QR detected.")
         self.publish_status("validating", "Validating your reservation...")
-        self.validation_executor.submit(self.validate_qr_payload, decoded_text)
+        self.validation_executor.submit(self.validate_qr_payload, acceptance.payload)
 
     def validate_qr_payload(self, qr_payload: str) -> None:
         result = self.perform_validation(qr_payload)
         self.publish_validation_status(result)
-        self.in_flight = False
+        self.scan_gate.complete()
 
     def on_validate_qr(
         self,
@@ -144,13 +118,7 @@ class QrReservationBridgeNode(Node):
     ) -> ValidateQr.Response:
         result = self.perform_validation(request.qr_payload)
         self.publish_validation_status(result)
-        outcome_values = {
-            QrValidationOutcome.VALID: ValidateQr.Response.VALID,
-            QrValidationOutcome.INVALID: ValidateQr.Response.INVALID,
-            QrValidationOutcome.EXPIRED: ValidateQr.Response.EXPIRED,
-            QrValidationOutcome.DUPLICATE: ValidateQr.Response.DUPLICATE,
-            QrValidationOutcome.UNAVAILABLE: ValidateQr.Response.UNAVAILABLE,
-        }
+        outcome_values = _ensure_outcome_mapping()
         response.outcome = outcome_values[result.outcome]
         response.request_id = request.request_id
         response.destination_id = result.destination_id
@@ -164,23 +132,6 @@ class QrReservationBridgeNode(Node):
                 "QR code could not be decoded.",
                 error_code="invalid_qr",
             )
-        if self.mock_mode:
-            destination_id = (
-                self.mock_destination_id
-                if self.mock_outcome == QrValidationOutcome.VALID
-                else ""
-            )
-            return BridgeValidation(
-                self.mock_outcome,
-                f"Mock QR validation outcome: {self.mock_outcome.value}.",
-                destination_id=destination_id,
-                error_code=(
-                    None
-                    if self.mock_outcome == QrValidationOutcome.VALID
-                    else self.mock_outcome.value
-                ),
-            )
-
         try:
             api_response = self.post_json(
                 self.validation_url, {"qr_payload": qr_payload}
@@ -297,7 +248,7 @@ class QrReservationBridgeNode(Node):
     def message_from_response(body: dict[str, Any], status_code: int) -> str:
         if isinstance(body.get("message"), str):
             return body["message"]
-        status_label = responses.get(status_code, "Validation error")
+        status_label = _STATUS_LABELS.get(status_code, "Validation error")
         return f"Reservation validation failed: {status_label}."
 
     @staticmethod

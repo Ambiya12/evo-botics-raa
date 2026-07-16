@@ -38,8 +38,8 @@ def generate_launch_description():
         executable="arm_command_relay_node",
         name="arm_command_relay",
         parameters=[{
-            "input_topic": "/evo/arm/command",
-            "output_topic": "/arm6_joints",
+            "input_topic": LaunchConfiguration("arm_input_topic"),
+            "output_topic": LaunchConfiguration("arm_output_topic"),
         }],
         output="screen",
     )
@@ -75,6 +75,10 @@ def generate_launch_description():
                               description="WebSocket port for rosbridge"),
         DeclareLaunchArgument("rosbridge", default_value="true",
                               description="Start rosbridge_websocket (skip if another launch already runs it)"),
+        DeclareLaunchArgument("arm_input_topic", default_value="/evo/arm/command",
+                              description="Dashboard arm command topic consumed by the native relay"),
+        DeclareLaunchArgument("arm_output_topic", default_value="/arm6_joints",
+                              description="Robot driver ArmJoints topic published by the native relay"),
 
         # --- rosbridge WebSocket server ---
         IncludeLaunchDescription(
@@ -108,8 +112,8 @@ def generate_launch_description():
             )
         ),
 
-        # Native QoS boundary for browser arm commands. The micro-ROS firmware
-        # consumes /arm6_joints with volatile durability.
+        # Native QoS boundary for browser arm commands. Configure
+        # arm_output_topic to the ArmJoints topic subscribed by the robot driver.
         arm_relay,
 
         # --- Web file server + camera snapshot/MJPEG ---

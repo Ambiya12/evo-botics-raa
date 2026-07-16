@@ -46,6 +46,24 @@ export type RobotTelemetry = {
     armJoints: ArmJoints | null;
     mapSize: string;
     diagnosticsLevel: number | null;
+    voice: {
+        sttStatus: string;
+        ttsStatus: string;
+        dialogueState: string;
+        transcript: string;
+        intent: string;
+        intentConfidence: number | null;
+        sttEvent: string;
+        sttError: string;
+        personPresent: boolean | null;
+        personDetectionCount: number;
+        workflowState: string;
+        workflowOutcome: string;
+        navigationState: string;
+        navigationDestination: string;
+        navigationMessage: string;
+        updatedAt: number | null;
+    };
 };
 
 export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
@@ -57,6 +75,24 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
     const [heartbeats, setHeartbeats] = useState<TopicHeartbeat[]>(initialHeartbeats);
     const [diagnostics, setDiagnostics] = useState<DiagnosticStatus[]>([]);
     const [armJoints, setArmJoints] = useState<ArmJoints | null>(null);
+    const [voice, setVoice] = useState<RobotTelemetry['voice']>({
+        sttStatus: 'waiting',
+        ttsStatus: 'waiting',
+        dialogueState: 'waiting',
+        transcript: '',
+        intent: '',
+        intentConfidence: null,
+        sttEvent: '',
+        sttError: '',
+        personPresent: null,
+        personDetectionCount: 0,
+        workflowState: '',
+        workflowOutcome: '',
+        navigationState: '',
+        navigationDestination: '',
+        navigationMessage: '',
+        updatedAt: null,
+    });
     const lastBatteryLevelRef = useRef<BatteryState['level'] | null>(null);
 
     const markTopic = useCallback((key: string) => {
@@ -118,6 +154,66 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
             setDiagnostics(diagnosticsFromMessage(message));
         }, { type: 'diagnostic_msgs/msg/DiagnosticArray', throttleRate: 1000 });
 
+        const updateVoice = (next: Partial<RobotTelemetry['voice']>) => {
+            setVoice((current) => ({ ...current, ...next, updatedAt: Date.now() }));
+        };
+        const voiceUnsubscribers = [
+            ros.subscribe('/voice/stt/status', (message: any) => {
+                updateVoice({ sttStatus: String(message?.data ?? 'unknown') });
+            }, { type: 'std_msgs/msg/String' }),
+            ros.subscribe('/voice/tts/status', (message: any) => {
+                updateVoice({ ttsStatus: String(message?.data ?? 'unknown') });
+            }, { type: 'std_msgs/msg/String' }),
+            ros.subscribe('/reception/dialogue/state', (message: any) => {
+                updateVoice({ dialogueState: String(message?.data ?? 'unknown') });
+            }, { type: 'std_msgs/msg/String' }),
+            ros.subscribe('/voice/stt/transcript', (message: any) => {
+                updateVoice({ transcript: String(message?.text ?? '') });
+            }, { type: 'evo_reception_interfaces/msg/Transcript' }),
+            ros.subscribe('/voice/intent/result', (message: any) => {
+                updateVoice({
+                    intent: String(message?.intent ?? ''),
+                    intentConfidence: Number.isFinite(Number(message?.confidence))
+                        ? Number(message.confidence)
+                        : null,
+                });
+            }, { type: 'evo_reception_interfaces/msg/IntentResult' }),
+            ros.subscribe('/voice/stt/diagnostics', (message: any) => {
+                try {
+                    const diagnostic = JSON.parse(String(message?.data ?? '{}'));
+                    updateVoice({
+                        sttEvent: String(diagnostic?.event ?? ''),
+                        sttError: String(diagnostic?.error ?? ''),
+                    });
+                } catch {
+                    updateVoice({ sttEvent: 'invalid_diagnostic', sttError: String(message?.data ?? '') });
+                }
+            }, { type: 'std_msgs/msg/String' }),
+            ros.subscribe('/vision/people/presence', (message: any) => {
+                updateVoice({ personPresent: Boolean(message?.data) });
+            }, { type: 'std_msgs/msg/Bool' }),
+            ros.subscribe('/vision/people/detections', () => {
+                setVoice((current) => ({
+                    ...current,
+                    personDetectionCount: current.personDetectionCount + 1,
+                    updatedAt: Date.now(),
+                }));
+            }, { type: 'evo_reception_interfaces/msg/PersonDetection', throttleRate: 100 }),
+            ros.subscribe('/reception/workflow/status', (message: any) => {
+                updateVoice({
+                    workflowState: String(message?.state ?? ''),
+                    workflowOutcome: String(message?.outcome ?? ''),
+                });
+            }, { type: 'evo_reception_interfaces/msg/WorkflowStatus' }),
+            ros.subscribe('/reception/navigation/status', (message: any) => {
+                updateVoice({
+                    navigationState: String(message?.state ?? ''),
+                    navigationDestination: String(message?.destination_id ?? ''),
+                    navigationMessage: String(message?.message ?? ''),
+                });
+            }, { type: 'evo_reception_interfaces/msg/NavigationStatus' }),
+        ];
+
         // Yahboom does not expose servo-position feedback. Its /joint_states
         // publisher contains a synthetic URDF state with model-specific names,
         // so mirror the command that actually reached the MCU input topic.
@@ -145,6 +241,7 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
             unsubscribeBattery();
             unsubscribeDiagnostics();
             unsubscribeArmCommands();
+            voiceUnsubscribers.forEach((unsubscribe) => unsubscribe());
             heartbeatUnsubscribers.forEach((unsubscribe) => unsubscribe());
         };
     }, [markTopic, ros]);
@@ -153,6 +250,6 @@ export function useRobotTelemetry(ros: RosApi): RobotTelemetry {
     const diagnosticsLevel = diagnostics.length ? Math.max(...diagnostics.map((item) => item.level)) : null;
 
     return useMemo(() => ({
-        map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel,
-    }), [map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel]);
+        map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel, voice,
+    }), [map, costmap, path, pose, battery, heartbeats, diagnostics, armJoints, mapSize, diagnosticsLevel, voice]);
 }

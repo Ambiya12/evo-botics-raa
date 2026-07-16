@@ -1,0 +1,7 @@
+#!/usr/bin/env python3
+
+from evo_navigation.nav_readiness_checker import main
+
+
+if __name__ == "__main__":
+    main()

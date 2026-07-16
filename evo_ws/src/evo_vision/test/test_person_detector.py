@@ -1,5 +1,6 @@
 import numpy as np
 
+from evo_vision.object_detector_node import PresenceTracker
 from evo_vision.person_detector import (
     DetectionBox,
     LetterboxTransform,
@@ -112,3 +113,63 @@ def test_distance_fails_closed_without_enough_depth_samples() -> None:
         min_distance_m=0.2,
         max_distance_m=3.0,
     ) is None
+
+
+def test_presence_true_after_continuous_detection() -> None:
+    tracker = PresenceTracker(hold_sec=5.0, release_sec=1.0)
+
+    assert tracker.update(True, 0.0) is None
+    assert not tracker.active
+
+    assert tracker.update(True, 6.0) is True
+    assert tracker.active
+
+    assert tracker.update(True, 7.0) is None
+
+
+def test_presence_false_after_release_window() -> None:
+    tracker = PresenceTracker(hold_sec=5.0, release_sec=1.0)
+
+    assert tracker.update(True, 0.0) is None
+    assert tracker.update(True, 6.0) is True
+    assert tracker.active
+
+    assert tracker.update(False, 6.5) is None
+
+    assert tracker.update(False, 8.0) is False
+    assert not tracker.active
+
+
+def test_presence_hold_resets_when_person_disappears_early() -> None:
+    tracker = PresenceTracker(hold_sec=5.0, release_sec=1.0)
+
+    assert tracker.update(True, 0.0) is None
+    assert tracker.update(True, 2.0) is None
+
+    assert tracker.update(False, 3.0) is None
+
+    assert tracker.update(True, 4.0) is None
+    assert tracker.update(True, 10.0) is True
+    assert tracker.active
+
+
+def test_presence_zero_hold_publishes_immediately() -> None:
+    tracker = PresenceTracker(hold_sec=0.0, release_sec=1.0)
+
+    assert tracker.update(True, 0.0) is True
+    assert tracker.active
+
+
+def test_presence_release_resets_when_person_reappears() -> None:
+    tracker = PresenceTracker(hold_sec=1.0, release_sec=5.0)
+
+    assert tracker.update(True, 0.0) is None
+    assert tracker.update(True, 2.0) is True
+    assert tracker.active
+
+    assert tracker.update(False, 3.0) is None
+    assert tracker.update(True, 4.0) is None
+    assert tracker.active
+
+    assert tracker.update(False, 11.0) is False
+    assert not tracker.active

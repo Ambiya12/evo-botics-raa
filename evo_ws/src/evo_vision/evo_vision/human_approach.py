@@ -63,6 +63,13 @@ class ApproachEvent:
     distance_m: float
 
 
+def detection_age_seconds(stamp_sec: float, now_sec: float) -> float | None:
+    """Return message age, or None when a producer supplied no timestamp."""
+    if stamp_sec == 0.0:
+        return None
+    return now_sec - stamp_sec
+
+
 class HumanApproachFilter:
     """Turns repeated person observations into one clean approach event."""
 
@@ -96,7 +103,7 @@ class HumanApproachFilter:
         observation: PersonObservation,
         now: float,
     ) -> ApproachEvent | None:
-        if not self._is_valid(observation):
+        if not self.is_valid_observation(observation):
             self._reset_candidate()
             self.tick(now)
             return None
@@ -150,30 +157,9 @@ class HumanApproachFilter:
 
     def is_person_present(self, now: float) -> bool:
         return (
-            self.last_valid_at is not None
+            self.presence_latched
+            and self.last_valid_at is not None
             and now - self.last_valid_at < self.config.absence_reset_sec
-        )
-
-    def _is_valid(self, observation: PersonObservation) -> bool:
-        values = (
-            observation.confidence,
-            observation.distance_m,
-            observation.normalized_x,
-            observation.normalized_y,
-        )
-        if not all(math.isfinite(value) for value in values):
-            return False
-        return (
-            observation.confidence >= self.config.min_confidence
-            and self.config.min_distance_m
-            <= observation.distance_m
-            <= self.config.max_distance_m
-            and self.config.zone_min_x
-            <= observation.normalized_x
-            <= self.config.zone_max_x
-            and self.config.zone_min_y
-            <= observation.normalized_y
-            <= self.config.zone_max_y
         )
 
     def _reset_candidate(self) -> None:

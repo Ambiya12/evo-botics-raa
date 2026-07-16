@@ -4,6 +4,7 @@ from evo_vision.human_approach import (
     ApproachConfig,
     HumanApproachFilter,
     PersonObservation,
+    detection_age_seconds,
 )
 
 
@@ -44,6 +45,22 @@ def test_passing_person_does_not_trigger_without_debounce() -> None:
     assert detector.process(person(confidence=0.1), now=0.2) is None
 
 
+def test_presence_remains_false_until_entry_debounce_completes() -> None:
+    detector = HumanApproachFilter(config(debounce_frames=3))
+
+    detector.process(person(), now=0.0)
+    detector.process(person(), now=0.1)
+    assert not detector.is_person_present(now=0.1)
+
+    assert detector.process(person(), now=0.2) is not None
+    assert detector.is_person_present(now=0.2)
+
+
+def test_detection_age_supports_freshness_and_zero_stamp_compatibility() -> None:
+    assert detection_age_seconds(0.0, 100.0) is None
+    assert detection_age_seconds(99.25, 100.0) == pytest.approx(0.75)
+
+
 def test_repeated_frames_publish_only_one_approach() -> None:
     detector = HumanApproachFilter(config(debounce_frames=3))
     events = [
@@ -64,6 +81,25 @@ def test_presence_tracks_valid_observation_and_absence_timeout() -> None:
     assert detector.is_person_present(now=0.5)
     detector.tick(now=1.1)
     assert not detector.is_person_present(now=1.1)
+
+
+def test_presence_armed_survives_five_second_detector_dropout() -> None:
+    detector = HumanApproachFilter(
+        config(debounce_frames=1, absence_reset_sec=10.0)
+    )
+    detector.process(person(), now=0.0)
+    detector.update_dialogue_state("PRESENCE_ARMED")
+
+    detector.process(person(confidence=0.1), now=1.0)
+    detector.tick(now=6.0)
+
+    assert detector.is_person_present(now=6.0)
+
+    # A later valid frame refreshes the departure timer, keeping the visitor
+    # armed for as long as they remain intermittently visible.
+    detector.process(person(), now=7.0)
+    detector.tick(now=16.0)
+    assert detector.is_person_present(now=16.0)
 
 
 @pytest.mark.parametrize(

@@ -20,7 +20,7 @@ intents:
     - have a reservation
     - have a booking
   affirmative:
-    - yes
+    - "yes"
     - yes please
     - yes i do
     - yeah
@@ -28,7 +28,7 @@ intents:
     - i do
     - i have one
   negative:
-    - no
+    - "no"
     - no thanks
     - no thank you
     - not yet

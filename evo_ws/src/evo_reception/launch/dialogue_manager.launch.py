@@ -12,7 +12,7 @@ def generate_launch_description():
         DeclareLaunchArgument("qr_inactivity_timeout_sec", default_value="20.0"),
         DeclareLaunchArgument("allowed_destination_ids_csv", default_value="1,2"),
         DeclareLaunchArgument(
-            "presence_greeting_fallback_sec", default_value="2.0"
+            "presence_greeting_fallback_sec", default_value="5.0"
         ),
         DeclareLaunchArgument("automatic_return_enabled", default_value="true"),
         DeclareLaunchArgument("timer_period_sec", default_value="0.2"),

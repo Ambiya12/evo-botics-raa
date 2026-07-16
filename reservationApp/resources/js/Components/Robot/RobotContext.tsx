@@ -22,6 +22,11 @@ import {
     quaternionFromYaw,
 } from "@/Components/Robot/transforms";
 import type { RosApi, Waypoint } from "@/Components/Robot/types";
+import {
+    configuredWaypointsFor,
+    identifyWaypointMap,
+    type WaypointMap,
+} from "@/Components/Robot/waypointRegistries";
 
 const DEFAULT_WAYPOINTS: Waypoint[] = [];
 
@@ -106,23 +111,13 @@ const loadStoredConfig = (): RobotConfig => {
     }
 };
 
-const loadStoredWaypoints = (): Waypoint[] => {
-    if (typeof window === "undefined") {
-        return DEFAULT_WAYPOINTS;
-    }
+type StoredWaypoints = Record<WaypointMap, Waypoint[]>;
 
-    try {
-        const stored = window.localStorage.getItem(ROBOT_WAYPOINTS_STORAGE_KEY);
-        if (!stored) {
-            return DEFAULT_WAYPOINTS;
-        }
+const EMPTY_STORED_WAYPOINTS: StoredWaypoints = { home: [], school: [] };
 
-        const parsed = JSON.parse(stored);
-        if (!Array.isArray(parsed)) {
-            return DEFAULT_WAYPOINTS;
-        }
-
-        return parsed
+const validStoredWaypoints = (value: unknown): Waypoint[] => (
+    Array.isArray(value)
+        ? value
             .filter((waypoint): waypoint is Waypoint => (
                 waypoint
                 && typeof waypoint.id === "string"
@@ -131,9 +126,32 @@ const loadStoredWaypoints = (): Waypoint[] => {
                 && Number.isFinite(waypoint.y)
                 && Number.isFinite(waypoint.yaw)
             ))
-            .slice(0, MAX_SAVED_WAYPOINTS);
+            .slice(0, MAX_SAVED_WAYPOINTS)
+        : []
+);
+
+const loadStoredWaypoints = (): StoredWaypoints => {
+    if (typeof window === "undefined") {
+        return EMPTY_STORED_WAYPOINTS;
+    }
+
+    try {
+        const stored = window.localStorage.getItem(ROBOT_WAYPOINTS_STORAGE_KEY);
+        if (!stored) {
+            return EMPTY_STORED_WAYPOINTS;
+        }
+
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+            // Migrate the old, map-agnostic storage as Home waypoints.
+            return { home: validStoredWaypoints(parsed), school: [] };
+        }
+        return {
+            home: validStoredWaypoints(parsed?.home),
+            school: validStoredWaypoints(parsed?.school),
+        };
     } catch {
-        return DEFAULT_WAYPOINTS;
+        return EMPTY_STORED_WAYPOINTS;
     }
 };
 
@@ -200,18 +218,30 @@ export function RobotProvider({ children }: { children: ReactNode }) {
     );
 
     const telemetry = useRobotTelemetry(ros);
-    const [waypoints, setWaypoints] = useState<Waypoint[]>(loadStoredWaypoints);
+    const [storedWaypoints, setStoredWaypoints] = useState<StoredWaypoints>(loadStoredWaypoints);
+    const waypointMap = useMemo(
+        () => identifyWaypointMap(telemetry.map),
+        [telemetry.map],
+    );
+    const waypoints = useMemo(
+        () => [
+            ...configuredWaypointsFor(waypointMap),
+            ...(waypointMap ? storedWaypoints[waypointMap] : DEFAULT_WAYPOINTS),
+        ],
+        [storedWaypoints, waypointMap],
+    );
+    const savedWaypoints = waypointMap ? storedWaypoints[waypointMap] : DEFAULT_WAYPOINTS;
 
     useEffect(() => {
         try {
             window.localStorage.setItem(
                 ROBOT_WAYPOINTS_STORAGE_KEY,
-                JSON.stringify(waypoints),
+                JSON.stringify(storedWaypoints),
             );
         } catch {
             // Waypoint persistence is a dashboard convenience; ROS remains authoritative.
         }
-    }, [waypoints]);
+    }, [storedWaypoints]);
 
     useEffect(() => ros.subscribe(config.goalStatusTopic, (message) => {
         const code = typeof message === "object" && message !== null && "data" in message
@@ -316,8 +346,8 @@ export function RobotProvider({ children }: { children: ReactNode }) {
 
     const addCurrentPoseWaypoint = useCallback(() => {
         const { pose } = telemetry;
-        if (!pose) return;
-        if (waypoints.length >= MAX_SAVED_WAYPOINTS) {
+        if (!pose || !waypointMap) return;
+        if (savedWaypoints.length >= MAX_SAVED_WAYPOINTS) {
             ros.addLog(
                 `Only ${MAX_SAVED_WAYPOINTS} dashboard waypoints can be saved. Remove one before saving another.`,
                 "warn",
@@ -326,33 +356,41 @@ export function RobotProvider({ children }: { children: ReactNode }) {
         }
 
         const usedNumbers = new Set(
-            waypoints
+            savedWaypoints
                 .map((waypoint) => waypoint.name.match(/^Waypoint ([1-3])$/)?.[1])
                 .filter(Boolean)
                 .map(Number),
         );
         const availableNumber = [1, 2, 3].find((number) => !usedNumbers.has(number))
-            ?? waypoints.length + 1;
+            ?? savedWaypoints.length + 1;
         const waypoint: Waypoint = {
             id: `waypoint-${Date.now()}`,
             name: `Waypoint ${availableNumber}`,
             x: pose.x,
             y: pose.y,
             yaw: pose.yaw,
+            source: "saved",
         };
-        setWaypoints((current) => [...current, waypoint]);
+        setStoredWaypoints((current) => ({
+            ...current,
+            [waypointMap]: [...current[waypointMap], waypoint],
+        }));
         ros.addLog(
             `Saved ${waypoint.name} from current pose: ${pose.x.toFixed(2)}, ${pose.y.toFixed(2)}`,
             "ok",
         );
-    }, [ros, telemetry, waypoints]);
+    }, [ros, savedWaypoints, telemetry, waypointMap]);
 
     const removeWaypoint = useCallback((id: string) => {
-        const waypoint = waypoints.find((item) => item.id === id);
+        const waypoint = savedWaypoints.find((item) => item.id === id);
         if (!waypoint) return;
-        setWaypoints((current) => current.filter((item) => item.id !== id));
+        if (!waypointMap) return;
+        setStoredWaypoints((current) => ({
+            ...current,
+            [waypointMap]: current[waypointMap].filter((item) => item.id !== id),
+        }));
         ros.addLog(`Removed waypoint: ${waypoint.name}`, "info");
-    }, [ros, waypoints]);
+    }, [ros, savedWaypoints, waypointMap]);
 
     const renameWaypoint = useCallback((id: string, name: string) => {
         const trimmedName = name.trim();
@@ -360,11 +398,15 @@ export function RobotProvider({ children }: { children: ReactNode }) {
             ros.addLog("Waypoint name cannot be empty.", "warn");
             return;
         }
-        setWaypoints((current) => current.map((waypoint) => (
-            waypoint.id === id ? { ...waypoint, name: trimmedName } : waypoint
-        )));
+        if (!waypointMap) return;
+        setStoredWaypoints((current) => ({
+            ...current,
+            [waypointMap]: current[waypointMap].map((waypoint) => (
+                waypoint.id === id ? { ...waypoint, name: trimmedName } : waypoint
+            )),
+        }));
         ros.addLog(`Renamed waypoint to: ${trimmedName}`, "ok");
-    }, [ros]);
+    }, [ros, waypointMap]);
 
     const value = useMemo<RobotContextValue>(
         () => ({

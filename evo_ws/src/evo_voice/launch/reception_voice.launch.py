@@ -1,4 +1,4 @@
-"""Reception voice stack with independent, safe-by-default audio backends."""
+"""Reception voice stack using local microphone, STT, and TTS backends."""
 
 from pathlib import Path
 import tempfile
@@ -27,11 +27,12 @@ def generate_launch_description():
     temporary_directory = Path(tempfile.gettempdir())
 
     return LaunchDescription([
-        DeclareLaunchArgument("tts_mock_audio", default_value="true"),
         DeclareLaunchArgument("piper_model_path", default_value=""),
         DeclareLaunchArgument("audio_output_device", default_value=""),
         DeclareLaunchArgument("piper_executable", default_value="piper"),
         DeclareLaunchArgument("audio_player_executable", default_value="mpv"),
+        DeclareLaunchArgument("synthesis_timeout_sec", default_value="30.0"),
+        DeclareLaunchArgument("playback_timeout_sec", default_value="30.0"),
         DeclareLaunchArgument(
             "tts_output_path",
             default_value=str(temporary_directory / "evo_voice_tts.wav"),
@@ -42,7 +43,6 @@ def generate_launch_description():
                 temporary_directory / "evo_voice_tts_cache"
             ),
         ),
-        DeclareLaunchArgument("stt_mock_audio", default_value="true"),
         DeclareLaunchArgument("stt_status_topic", default_value="/voice/stt/status"),
         DeclareLaunchArgument("stt_model_path", default_value=""),
         DeclareLaunchArgument("stt_device", default_value="cpu"),
@@ -62,7 +62,6 @@ def generate_launch_description():
         include_voice_launch(
             "tts.launch.py",
             {
-                "mock_audio": LaunchConfiguration("tts_mock_audio"),
                 "piper_model_path": LaunchConfiguration("piper_model_path"),
                 "audio_output_device": LaunchConfiguration(
                     "audio_output_device"
@@ -73,12 +72,17 @@ def generate_launch_description():
                 ),
                 "output_path": LaunchConfiguration("tts_output_path"),
                 "cache_directory": LaunchConfiguration("tts_cache_directory"),
+                "synthesis_timeout_sec": LaunchConfiguration(
+                    "synthesis_timeout_sec"
+                ),
+                "playback_timeout_sec": LaunchConfiguration(
+                    "playback_timeout_sec"
+                ),
             },
         ),
         include_voice_launch(
             "stt.launch.py",
             {
-                "mock_audio": LaunchConfiguration("stt_mock_audio"),
                 "status_topic": LaunchConfiguration("stt_status_topic"),
                 "model_path": LaunchConfiguration("stt_model_path"),
                 "device": LaunchConfiguration("stt_device"),

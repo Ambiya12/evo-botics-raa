@@ -4,8 +4,27 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 import time
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import urlsplit
+
+
+QR_VALIDATION_OUTCOME_TO_RESPONSE: dict["QrValidationOutcome", int] = {}
+"""Lazily populated to avoid circular imports with evo_reception_interfaces."""
+
+
+def _ensure_outcome_mapping() -> dict["QrValidationOutcome", int]:
+    if QR_VALIDATION_OUTCOME_TO_RESPONSE:
+        return QR_VALIDATION_OUTCOME_TO_RESPONSE
+    from evo_reception_interfaces.srv import ValidateQr
+
+    QR_VALIDATION_OUTCOME_TO_RESPONSE.update({
+        QrValidationOutcome.VALID: ValidateQr.Response.VALID,
+        QrValidationOutcome.INVALID: ValidateQr.Response.INVALID,
+        QrValidationOutcome.EXPIRED: ValidateQr.Response.EXPIRED,
+        QrValidationOutcome.DUPLICATE: ValidateQr.Response.DUPLICATE,
+        QrValidationOutcome.UNAVAILABLE: ValidateQr.Response.UNAVAILABLE,
+    })
+    return QR_VALIDATION_OUTCOME_TO_RESPONSE
 
 
 class QrValidationOutcome(str, Enum):
@@ -31,7 +50,6 @@ class ScanAcceptance:
 
 
 def validate_backend_configuration(
-    mock_mode: bool,
     validation_url: str,
     request_timeout_sec: float,
     duplicate_cooldown_sec: float,
@@ -43,14 +61,13 @@ def validate_backend_configuration(
         errors.append("request_timeout_sec must be greater than zero")
     if duplicate_cooldown_sec < 0.0:
         errors.append("duplicate_cooldown_sec must be non-negative")
-    if not mock_mode:
-        parsed = urlsplit(url)
-        if not url:
-            errors.append("validation_url is required when mock_mode is false")
-        elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            errors.append("validation_url must be an absolute HTTP(S) URL")
-        elif parsed.username is not None or parsed.password is not None:
-            errors.append("validation_url must not contain credentials")
+    parsed = urlsplit(url)
+    if not url:
+        errors.append("validation_url is required")
+    elif parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        errors.append("validation_url must be an absolute HTTP(S) URL")
+    elif parsed.username is not None or parsed.password is not None:
+        errors.append("validation_url must not contain credentials")
     if errors:
         raise ValueError(
             "Invalid QR backend configuration: " + "; ".join(errors)

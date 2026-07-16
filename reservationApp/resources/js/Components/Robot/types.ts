@@ -33,6 +33,7 @@ export type Waypoint = {
     x: number;
     y: number;
     yaw: number;
+    source?: 'configured' | 'saved';
 };
 
 export type BatteryState = {

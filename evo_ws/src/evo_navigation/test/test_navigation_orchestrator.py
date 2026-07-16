@@ -1,14 +1,28 @@
 import pytest
 
 from evo_navigation.navigation_orchestrator import (
-    MockNavigator,
     NavigationGates,
     NavigationOrchestrator,
     NavigationOutcome,
+    NavigationResult,
     NavigationState,
-    validate_navigation_mode,
+    localization_is_ready,
+    validate_navigation_configuration,
 )
 from evo_navigation.waypoints import Waypoint, WaypointRegistry
+
+
+class RecordingNavigator:
+    def __init__(self, outcome: NavigationOutcome = NavigationOutcome.ARRIVED) -> None:
+        self.outcome = outcome
+        self.calls: list[Waypoint] = []
+
+    def navigate(self, waypoint, timeout_sec, cancelled) -> NavigationResult:
+        self.calls.append(waypoint)
+        outcome = (
+            NavigationOutcome.CANCELLED if cancelled() else self.outcome
+        )
+        return NavigationResult(outcome, f"Navigation {outcome.value}.")
 
 
 def registry() -> WaypointRegistry:
@@ -30,7 +44,7 @@ def ready_gates() -> NavigationGates:
 
 
 def make_orchestrator(
-    navigator: MockNavigator,
+    navigator: RecordingNavigator,
     gates=ready_gates,
 ):
     statuses: list[tuple[NavigationState, str]] = []
@@ -43,8 +57,8 @@ def make_orchestrator(
     return orchestrator, statuses
 
 
-def test_mock_navigation_success() -> None:
-    navigator = MockNavigator(NavigationOutcome.ARRIVED)
+def test_navigation_success() -> None:
+    navigator = RecordingNavigator(NavigationOutcome.ARRIVED)
     orchestrator, statuses = make_orchestrator(navigator)
 
     result = orchestrator.execute("42", timeout_sec=10.0)
@@ -58,26 +72,22 @@ def test_mock_navigation_success() -> None:
     assert [waypoint.destination_id for waypoint in navigator.calls] == ["42"]
 
 
-def test_mock_mode_ignores_real_navigation_opt_in() -> None:
-    assert validate_navigation_mode(True, True, True) == "mock"
-
-
 def test_real_navigation_requires_explicit_opt_in() -> None:
     with pytest.raises(ValueError, match="locked"):
-        validate_navigation_mode(False, False, True)
+        validate_navigation_configuration(False, True)
 
 
 def test_real_navigation_requires_validated_waypoints() -> None:
     with pytest.raises(ValueError, match="hardware_validated"):
-        validate_navigation_mode(False, True, False)
+        validate_navigation_configuration(True, False)
 
 
-def test_real_navigation_requires_both_safety_keys() -> None:
-    assert validate_navigation_mode(False, True, True) == "real"
+def test_real_navigation_accepts_both_safety_keys() -> None:
+    assert validate_navigation_configuration(True, True) is None
 
 
 def test_unknown_destination_fails_without_movement() -> None:
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
     gate_checks = []
     orchestrator, statuses = make_orchestrator(
         navigator,
@@ -92,8 +102,8 @@ def test_unknown_destination_fails_without_movement() -> None:
     assert gate_checks == [True]
 
 
-def test_mock_navigation_cancellation() -> None:
-    navigator = MockNavigator()
+def test_navigation_cancellation() -> None:
+    navigator = RecordingNavigator()
     orchestrator, statuses = make_orchestrator(navigator)
 
     result = orchestrator.execute(
@@ -104,8 +114,8 @@ def test_mock_navigation_cancellation() -> None:
     assert [state for state, _ in statuses][-1] == NavigationState.CANCELLED
 
 
-def test_mock_navigation_timeout() -> None:
-    navigator = MockNavigator(NavigationOutcome.TIMEOUT)
+def test_navigation_timeout() -> None:
+    navigator = RecordingNavigator(NavigationOutcome.TIMEOUT)
     orchestrator, statuses = make_orchestrator(navigator)
 
     result = orchestrator.execute("42", timeout_sec=0.01)
@@ -114,8 +124,8 @@ def test_mock_navigation_timeout() -> None:
     assert [state for state, _ in statuses][-1] == NavigationState.TIMEOUT
 
 
-def test_mock_navigation_failure() -> None:
-    navigator = MockNavigator(NavigationOutcome.FAILED)
+def test_navigation_failure() -> None:
+    navigator = RecordingNavigator(NavigationOutcome.FAILED)
     orchestrator, statuses = make_orchestrator(navigator)
 
     result = orchestrator.execute("42", timeout_sec=10.0)
@@ -125,7 +135,7 @@ def test_mock_navigation_failure() -> None:
 
 
 def test_estop_gates_every_request() -> None:
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
     orchestrator, statuses = make_orchestrator(
         navigator,
         gates=lambda: NavigationGates(True, True, True),
@@ -140,7 +150,7 @@ def test_estop_gates_every_request() -> None:
 
 
 def test_localization_readiness_gates_every_request() -> None:
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
     orchestrator, _ = make_orchestrator(
         navigator,
         gates=lambda: NavigationGates(False, False, True),
@@ -154,7 +164,7 @@ def test_localization_readiness_gates_every_request() -> None:
 
 
 def test_nav2_readiness_gates_every_request() -> None:
-    navigator = MockNavigator()
+    navigator = RecordingNavigator()
     orchestrator, _ = make_orchestrator(
         navigator,
         gates=lambda: NavigationGates(False, True, False),
@@ -165,3 +175,27 @@ def test_nav2_readiness_gates_every_request() -> None:
     assert result.outcome == NavigationOutcome.FAILED
     assert "Nav2" in result.message
     assert navigator.calls == []
+
+
+def test_stationary_valid_amcl_pose_does_not_expire_by_default() -> None:
+    assert localization_is_ready(
+        valid_pose_received=True,
+        last_seen_at=10.0,
+        timeout_sec=0.0,
+        now=10_000.0,
+    )
+
+
+def test_optional_amcl_freshness_limit_remains_available() -> None:
+    assert not localization_is_ready(
+        valid_pose_received=True,
+        last_seen_at=10.0,
+        timeout_sec=5.0,
+        now=16.0,
+    )
+    assert not localization_is_ready(
+        valid_pose_received=False,
+        last_seen_at=0.0,
+        timeout_sec=0.0,
+        now=16.0,
+    )

@@ -1,5 +1,4 @@
 # Reception waypoints measured in the Home map frame.
-# B0-B3 controlled-site acceptance was confirmed on 2026-07-04.
 frame_id: map
 hardware_validated: true
 

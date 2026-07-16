@@ -2,7 +2,7 @@
 <package format="3">
   <name>evo_voice</name>
   <version>0.1.0</version>
-  <description>Evo-Botics speech-to-text, translation, and text-to-speech node.</description>
+  <description>Evo-Botics speech-to-text, intent detection, and queued text-to-speech nodes.</description>
   <maintainer email="evobotics@example.com">Evo-Botics</maintainer>
   <license>MIT</license>
 
@@ -17,7 +17,6 @@
   <exec_depend>python3-faster-whisper</exec_depend>
   <exec_depend>python3-speechrecognition</exec_depend>
   <exec_depend>python3-pyaudio</exec_depend>
-  <exec_depend>python3-argostranslate</exec_depend>
   <exec_depend>piper-tts</exec_depend>
   <exec_depend>mpv</exec_depend>
 
