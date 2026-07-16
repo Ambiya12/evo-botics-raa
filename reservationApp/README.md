@@ -17,7 +17,15 @@ composer install
 ./vendor/bin/sail composer require livewire/livewire
 ```
 
-En attendant que tout s'installe, remplissez les champs DB_DATABASE, DB_USERNAME et DB_PASSWORD du fichier .env.example et renommez le .env.
+Copiez le modèle d'environnement, puis adaptez les identifiants de base de
+données dans votre fichier `.env` local si nécessaire :
+
+```bash
+cp .env.example .env
+```
+
+Le fichier `.env.example` contient des valeurs de développement compatibles
+avec Laravel Sail et doit rester suivi par Git.
 
 # Lancement du projet avec Docker
 
